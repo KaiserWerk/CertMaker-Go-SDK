@@ -1,2 +1,3 @@
 # SimpleCA-Go-SDK
-The Golang development library for the SimpleCA
+
+The Golang development library for the *CertMaker*.
