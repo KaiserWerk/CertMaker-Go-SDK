@@ -19,14 +19,18 @@ const (
 	authenticationHeader      = "X-Auth-Token"
 	certificateLocationHeader = "X-Certificate-Location"
 	privateKeyLocationHeader  = "X-Privatekey-Location"
+
+	minCertValidity = 3 // in days
 )
 
+// Client represents the structure required to obtain certificates (and private keys) from a remote location.
 type Client struct {
 	httpClient *http.Client
 	baseUrl    string
 	token      string
 }
 
+// NewClient returns a *Client with a new *http.Client and baseUrl and token set to their parameter values
 func NewClient(baseUrl, token string) *Client {
 	c := Client{
 		httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -43,15 +47,16 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string) error {
 	// make sure the cache directory exists
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	// check if files exist and if cert validity > 3 days
+	// check if both files exist and if cert validity > minCertValidity
 	if fileExists(cache.GetCertificatePath()) && fileExists(cache.GetPrivateKeyPath()) {
 		pair, err := tls.LoadX509KeyPair(cache.GetCertificatePath(), cache.GetPrivateKeyPath())
 		// if err != nil, continue to fetch fresh certificate(s)
 		if err == nil {
 			cert, err := x509.ParseCertificate(pair.Certificate[0])
 			if err == nil {
+				// return here if certificate validity is still > minCertValidity
 				diff := cert.NotAfter.Sub(time.Now())
-				if diff.Hours() > 24 * 3 {
+				if diff.Hours() > 24 * minCertValidity {
 					return nil
 				}
 			}
