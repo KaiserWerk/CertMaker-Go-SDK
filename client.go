@@ -2,6 +2,8 @@ package certmaker
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,13 +13,12 @@ import (
 )
 
 const (
-	apiPrefix = "/api"
-	requestCertificatePath = apiPrefix + "/certificate/request"
-	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
+	requestCertificatePath        = "/api/certificate/request"
+	requestCertificateWithCSRPath = "/api/certificate/request-with-csr"
 
-	authenticationHeader = "X-Auth-Key"
+	authenticationHeader      = "X-Auth-Token"
 	certificateLocationHeader = "X-Certificate-Location"
-	privateKeyLocationHeader = "X-Privatekey-Location"
+	privateKeyLocationHeader  = "X-Privatekey-Location"
 )
 
 type Client struct {
@@ -26,23 +27,40 @@ type Client struct {
 	token      string
 }
 
-func NewClient(baseUrl, token string) (*Client, error) {
+func NewClient(baseUrl, token string) *Client {
 	c := Client{
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 		baseUrl:    baseUrl,
 		token:      token,
 	}
 
-	return &c, nil
+	return &c
 }
+
 // RequestForDomains is a convenience function to fetch a certificate and a private
-// token for just the selected domain without a care about other settings.
+// key for just the selected domain(s) without a care about other settings.
 func (c *Client) RequestForDomains(cache *Cache, domain []string) error {
 	// make sure the cache directory exists
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
+	// check if files exist and if cert validity > 3 days
+	if fileExists(cache.GetCertificatePath()) && fileExists(cache.GetPrivateKeyPath()) {
+		pair, err := tls.LoadX509KeyPair(cache.GetCertificatePath(), cache.GetPrivateKeyPath())
+		// if err != nil, continue to fetch fresh certificate(s)
+		if err == nil {
+			cert, err := x509.ParseCertificate(pair.Certificate[0])
+			if err == nil {
+				diff := cert.NotAfter.Sub(time.Now())
+				if diff.Hours() > 24 * 3 {
+					return nil
+				}
+			}
+		}
+	}
+
 	cr := CertificateRequest{
 		Domains: domain,
+		Days: 30,
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -52,7 +70,9 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string) error {
 
 	buf := bytes.NewBuffer(jsonCont)
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s", c.baseUrl, requestCertificatePath), buf)
+	url := c.baseUrl + requestCertificatePath
+
+	req, err := http.NewRequest(http.MethodPost, url, buf)
 	if err != nil {
 		return err
 	}
@@ -69,11 +89,21 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string) error {
 	}
 	_ = resp.Body.Close()
 
-	err = c.downloadCertificateFromLocation(resp.Header, cache)
+	certLoc := resp.Header.Get(certificateLocationHeader)
+	if certLoc == "" {
+		return fmt.Errorf("missing %s header", certificateLocationHeader)
+	}
+	err = c.downloadCertificateFromLocation(certLoc, cache)
 	if err != nil {
 		return fmt.Errorf("error downloading certificate from location: " + err.Error())
 	}
-	err = c.downloadPrivateKeyFromLocation(resp.Header, cache)
+
+	pkLoc := resp.Header.Get(privateKeyLocationHeader)
+	if pkLoc == "" {
+		return fmt.Errorf("missing %s header", privateKeyLocationHeader)
+	}
+
+	err = c.downloadPrivateKeyFromLocation(pkLoc, cache)
 	if err != nil {
 		return fmt.Errorf("error downloading private key from location: " + err.Error())
 	}
@@ -81,19 +111,20 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string) error {
 	return nil
 }
 
-func (c *Client) downloadCertificateFromLocation(header http.Header, cache *Cache) error {
-	certLoc := header.Get(certificateLocationHeader)
-	if certLoc == "" {
-		return fmt.Errorf("missing %s header", certificateLocationHeader)
-	}
-
-	req, err := http.NewRequest(http.MethodGet, header.Get(certificateLocationHeader), nil)
+func (c *Client) downloadCertificateFromLocation(certLocation string, cache *Cache) error {
+	req, err := http.NewRequest(http.MethodGet, certLocation, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set(authenticationHeader, c.token)
+
 	certReq, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
+	}
+
+	if certReq.StatusCode != http.StatusOK {
+		return fmt.Errorf("private key request: expected status 200, got %d", certReq.StatusCode)
 	}
 
 	dstWriter, err := os.Create(cache.GetCertificatePath())
@@ -110,19 +141,20 @@ func (c *Client) downloadCertificateFromLocation(header http.Header, cache *Cach
 	return nil
 }
 
-func (c *Client) downloadPrivateKeyFromLocation(header http.Header, cache *Cache) error {
-	pkLoc := header.Get(privateKeyLocationHeader)
-	if pkLoc == "" {
-		return fmt.Errorf("missing %s header", privateKeyLocationHeader)
-	}
-
-	req, err := http.NewRequest(http.MethodGet, header.Get(privateKeyLocationHeader), nil)
+func (c *Client) downloadPrivateKeyFromLocation(keyLocation string, cache *Cache) error {
+	req, err := http.NewRequest(http.MethodGet, keyLocation, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set(authenticationHeader, c.token)
+
 	keyReq, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
+	}
+
+	if keyReq.StatusCode != http.StatusOK {
+		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
 	dstWriter, err := os.Create(cache.GetPrivateKeyPath())
@@ -138,4 +170,3 @@ func (c *Client) downloadPrivateKeyFromLocation(header http.Header, cache *Cache
 
 	return nil
 }
-
