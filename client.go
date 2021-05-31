@@ -292,7 +292,7 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 		return fmt.Errorf("private key request: expected status 200, got %d", certReq.StatusCode)
 	}
 
-	dstWriter, err := os.Create(cache.GetCertificatePath())
+	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY | os.O_APPEND | os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
-	dstWriter, err := os.Create(cache.GetPrivateKeyPath())
+	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY | os.O_APPEND | os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
