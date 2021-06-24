@@ -8,13 +8,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
 
 const (
-	requestCertificatePath        = "/api/certificate/request"
-	requestCertificateWithCSRPath = "/api/certificate/request-with-csr"
+	apiPrefix                     = "/api/v1"
+	requestCertificatePath        = apiPrefix + "/certificate/request"
+	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
+	obtainCertificatePath         = apiPrefix + "/certificate/%d/obtain"
+	obtainPrivateKeyPath          = apiPrefix + "/privatekey/%d/obtain"
+	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
+	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
 
 	authenticationHeader      = "X-Auth-Token"
 	certificateLocationHeader = "X-Certificate-Location"
@@ -41,19 +47,31 @@ func NewClient(baseUrl, token string) *Client {
 	return &c
 }
 
+func (c *Client) SetProxy(addr string) error {
+	u, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return err
+	}
+
+	c.httpClient.Transport = &http.Transport{
+		Proxy: http.ProxyURL(u),
+	}
+
+	return nil
+}
+
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) without a care about other settings.
 func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	err := isKeyPairValid(cache)
-	if err != nil {
-		return err
+	if valid := isKeyPairValid(cache); valid {
+		return nil
 	}
 
 	cr := CertificateRequest{
 		Domains: domain,
-		Days: days,
+		Days:    days,
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -85,13 +103,12 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	err := isKeyPairValid(cache)
-	if err != nil {
-		return err
+	if valid := isKeyPairValid(cache); valid {
+		return nil
 	}
 
 	cr := CertificateRequest{
-		IPs: ips,
+		IPs:  ips,
 		Days: days,
 	}
 
@@ -124,14 +141,13 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	err := isKeyPairValid(cache)
-	if err != nil {
-		return err
+	if valid := isKeyPairValid(cache); valid {
+		return nil
 	}
 
 	cr := CertificateRequest{
 		EmailAddresses: emails,
-		Days: days,
+		Days:           days,
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -163,9 +179,8 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 func (c *Client) Request(cache *Cache, cr *CertificateRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	err := isKeyPairValid(cache)
-	if err != nil {
-		return err
+	if valid := isKeyPairValid(cache); valid {
+		return nil
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -203,10 +218,9 @@ func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error
 		return fmt.Errorf("private key file missing")
 	}
 
-	err := isKeyPairValid(cache)
-	if err != nil {
-		return err
-	}
+	//if valid := isKeyPairValid(cache); valid {
+	//	return ErrStillValid(fmt.Errorf("key pair is still valid")))
+	//}
 
 	jsonCont, err := json.Marshal(csr)
 	if err != nil {
@@ -226,7 +240,7 @@ func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading private key from location '%s': %s" , pkLoc, err.Error())
+		return fmt.Errorf("error downloading private key from location '%s': %s", pkLoc, err.Error())
 	}
 
 	return nil
@@ -252,28 +266,27 @@ func (c *Client) RequestRepeatedlyWithCSR(cache *Cache, csr x509.CertificateRequ
 	return nil
 }
 
-
-func isKeyPairValid(cache *Cache) error {
+func isKeyPairValid(cache *Cache) bool {
 	if !fileExists(cache.GetCertificatePath()) || !fileExists(cache.GetPrivateKeyPath()) {
-		return fmt.Errorf("at least one of the files does not exist")
+		return false
 	}
 	pair, err := tls.LoadX509KeyPair(cache.GetCertificatePath(), cache.GetPrivateKeyPath())
 	if err != nil {
-		return err
+		return false
 	}
 	cert, err := x509.ParseCertificate(pair.Certificate[0])
 	if err != nil {
-		return err
+		return false
 	}
 
 	diff := cert.NotAfter.Sub(time.Now())
-	if diff.Hours() < 24 * minCertValidity {
-		return fmt.Errorf("certificate is invalid; remaining valididy of %f hours is below threshold of %d hours", diff.Hours(), 24 * minCertValidity)
+	if diff.Hours() < 24*minCertValidity {
+		return false
 	}
 
 	// TODO check OCSP responder
 
-	return nil
+	return true
 }
 
 func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation string) error {
@@ -289,10 +302,10 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 	}
 
 	if certReq.StatusCode != http.StatusOK {
-		return fmt.Errorf("private key request: expected status 200, got %d", certReq.StatusCode)
+		return fmt.Errorf("certificate request: expected status 200, got %d", certReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY | os.O_APPEND | os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
@@ -322,7 +335,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY | os.O_APPEND | os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
