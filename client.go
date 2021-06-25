@@ -26,7 +26,8 @@ const (
 	certificateLocationHeader = "X-Certificate-Location"
 	privateKeyLocationHeader  = "X-Privatekey-Location"
 
-	minCertValidity = 3 // in days
+	minCertValidity      = 3 // in days
+	clientDefaultTimeout = 5 * time.Second
 )
 
 // Client represents the structure required to obtain certificates (and private keys) from a remote location.
@@ -34,19 +35,33 @@ type Client struct {
 	httpClient *http.Client
 	baseUrl    string
 	token      string
+	updater    *Updater
 }
 
-// NewClient returns a *Client with a new *http.Client and baseUrl and token set to their parameter values
-func NewClient(baseUrl, token string) *Client {
+// NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values
+func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 	c := Client{
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		baseUrl:    baseUrl,
-		token:      token,
+		baseUrl: baseUrl,
+		token:   token,
+	}
+	if settings != nil {
+		timeout := clientDefaultTimeout
+		if settings.ClientTimeout > 0 {
+			timeout = settings.ClientTimeout
+		}
+		c.httpClient = &http.Client{Timeout: timeout}
+
+		if settings.Transport != nil {
+			c.httpClient.Transport = settings.Transport
+		}
+	} else {
+		c.httpClient = &http.Client{Timeout: clientDefaultTimeout}
 	}
 
 	return &c
 }
 
+// SetProxy sets up the *Client to use the supplied address as proxy address
 func (c *Client) SetProxy(addr string) error {
 	u, err := url.ParseRequestURI(addr)
 	if err != nil {
@@ -60,16 +75,32 @@ func (c *Client) SetProxy(addr string) error {
 	return nil
 }
 
+// SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
+func (c *Client) SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest) {
+	c.updater = &Updater{
+		cache:         cache,
+		simpleRequest: sr,
+	}
+}
+
+// SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
+func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
+	c.updater = &Updater{
+		cache: cache,
+		csr:   csr,
+	}
+}
+
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) without a care about other settings.
 func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := isKeyPairValid(cache); valid {
-		return nil
+	if valid := cache.Valid(false); valid {
+		return ErrStillValid{}
 	}
 
-	cr := CertificateRequest{
+	cr := SimpleRequest{
 		Domains: domain,
 		Days:    days,
 	}
@@ -103,11 +134,11 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := isKeyPairValid(cache); valid {
-		return nil
+	if valid := cache.Valid(false); valid {
+		return ErrStillValid{}
 	}
 
-	cr := CertificateRequest{
+	cr := SimpleRequest{
 		IPs:  ips,
 		Days: days,
 	}
@@ -141,11 +172,11 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := isKeyPairValid(cache); valid {
-		return nil
+	if valid := cache.Valid(false); valid {
+		return ErrStillValid{}
 	}
 
-	cr := CertificateRequest{
+	cr := SimpleRequest{
 		EmailAddresses: emails,
 		Days:           days,
 	}
@@ -175,12 +206,12 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 }
 
 // Request requests a fresh certificate and private key with the meta data contained in the
-// CertificateRequest.
-func (c *Client) Request(cache *Cache, cr *CertificateRequest) error {
+// SimpleRequest.
+func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := isKeyPairValid(cache); valid {
-		return nil
+	if valid := cache.Valid(false); valid {
+		return ErrStillValid{}
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -211,7 +242,7 @@ func (c *Client) Request(cache *Cache, cr *CertificateRequest) error {
 // commonly known as a Certificate Signing Request (CSR).
 // The *Cache must have the PrivateKeyFilename field set to a file containing a valid private key. Otherwise
 // the process will fail.
-func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error {
+func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
 	if !fileExists(cache.GetPrivateKeyPath()) {
@@ -228,7 +259,7 @@ func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, pkLoc, err := c.requestNewKeyPair(buf)
+	certLoc, _, err := c.requestNewKeyPair(buf)
 	if err != nil {
 		return err
 	}
@@ -238,10 +269,10 @@ func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error
 		return fmt.Errorf("error downloading certificate from location '%s': %s", certLoc, err.Error())
 	}
 
-	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
-	if err != nil {
-		return fmt.Errorf("error downloading private key from location '%s': %s", pkLoc, err.Error())
-	}
+	//err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
+	//if err != nil {
+	//	return fmt.Errorf("error downloading private key from location '%s': %s", pkLoc, err.Error())
+	//}
 
 	return nil
 }
@@ -252,9 +283,9 @@ func (c *Client) RequestWithCSR(cache *Cache, csr x509.CertificateRequest) error
 //
 // To stop execution, write true into the stopChan channel. If you don't need the ability to stop, pass nil
 // as parameter for the stopChan.
-func (c *Client) RequestRepeatedly(cache *Cache, cr *CertificateRequest, interval time.Duration, stopChan chan bool) error {
-	return nil
-}
+//func (c *Client) RequestRepeatedly(cache *Cache, cr *SimpleRequest, interval time.Duration, stopChan chan bool) error {
+//	return nil
+//}
 
 // RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval
 // until you tell it to stop. This is useful for servers that run for weeks or months without interruption.
@@ -262,31 +293,30 @@ func (c *Client) RequestRepeatedly(cache *Cache, cr *CertificateRequest, interva
 //
 // To stop execution, write true into the stopChan channel. If you don't need the ability to stop, pass nil
 // as parameter for the stopChan.
-func (c *Client) RequestRepeatedlyWithCSR(cache *Cache, csr x509.CertificateRequest, interval time.Duration, stopChan chan bool) error {
-	return nil
-}
+//func (c *Client) RequestRepeatedlyWithCSR(cache *Cache, csr x509.CertificateRequest, interval time.Duration, stopChan chan bool) error {
+//	return nil
+//}
 
-func isKeyPairValid(cache *Cache) bool {
-	if !fileExists(cache.GetCertificatePath()) || !fileExists(cache.GetPrivateKeyPath()) {
-		return false
+func (c *Client) GetCertificateFunc(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	_ = os.Mkdir(c.updater.cache.CacheDir, 0755)
+
+	if valid := c.updater.cache.Valid(false); valid {
+		return nil, nil // no error in order to not upset the server
 	}
-	pair, err := tls.LoadX509KeyPair(cache.GetCertificatePath(), cache.GetPrivateKeyPath())
+
+	var err error
+	if c.updater.simpleRequest != nil {
+		err = c.Request(c.updater.cache, c.updater.simpleRequest)
+	} else {
+		err = c.RequestWithCSR(c.updater.cache, c.updater.csr)
+	}
+
+	tlsCert, err := c.updater.cache.GetTlsCertificate()
 	if err != nil {
-		return false
-	}
-	cert, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return false
+		return nil, err
 	}
 
-	diff := cert.NotAfter.Sub(time.Now())
-	if diff.Hours() < 24*minCertValidity {
-		return false
-	}
-
-	// TODO check OCSP responder
-
-	return true
+	return tlsCert, nil
 }
 
 func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation string) error {
@@ -350,9 +380,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 }
 
 func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
-
-	url := c.baseUrl + requestCertificatePath
-	req, err := http.NewRequest(http.MethodPost, url, body)
+	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
 	if err != nil {
 		return "", "", err
 	}
@@ -364,7 +392,7 @@ func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 		return "", "", err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK { // TODO handle challenge
 		return "", "", fmt.Errorf("expected status code 200, got %d", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
