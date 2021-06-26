@@ -15,8 +15,8 @@ type Cache struct {
 	CertificateFilename string
 }
 
-// NewCache returns a *Cache with default values: CacheDir is `.certs`,
-// CertificateFilename is `cert.pem,` PrivateKeyFilename is `key.pem`
+// NewCache returns a *Cache with default values: CacheDir is .certs,
+// CertificateFilename is cert.pem, PrivateKeyFilename is key.pem
 func NewCache() (*Cache, error) {
 	cache := Cache{}
 	baseDir, err := filepath.Abs(".")
@@ -28,6 +28,15 @@ func NewCache() (*Cache, error) {
 	cache.PrivateKeyFilename = "key.pem"
 
 	return &cache, nil
+}
+
+func (c *Cache) SetDir(dir string) error {
+	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	c.CacheDir = baseDir
+	return nil
 }
 
 // GetCertificatePath returns the full path the Cache's certificate file

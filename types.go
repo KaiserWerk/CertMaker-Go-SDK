@@ -40,4 +40,6 @@ type Updater struct {
 type ClientSettings struct {
 	Transport     *http.Transport
 	ClientTimeout time.Duration
+	StrictMode bool
+	ChallengePort uint16
 }

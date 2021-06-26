@@ -1,29 +1,25 @@
 package certmaker
 
 import (
-	"reflect"
+	"path/filepath"
 	"testing"
 )
 
 func TestNewCache(t *testing.T) {
-	tests := []struct {
-		name    string
-		want    *Cache
-		wantErr bool
-	}{
-		// TODO: Add test cases.
+	c, err := NewCache()
+	if err != nil {
+		t.Fatalf("expeced no error with NewCache(), got %s", err.Error())
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewCache()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewCache() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewCache() got = %v, want %v", got, tt.want)
-			}
-		})
+	if filepath.Base(c.CacheDir) != ".certs" {
+		t.Fatalf("expected CacheDir .certs, got %s", c.CacheDir)
+	}
+
+	if c.PrivateKeyFilename != "key.pem" {
+		t.Fatalf("expected private key filename key.pem, got %s", c.PrivateKeyFilename)
+	}
+
+	if c.CertificateFilename != "cert.pem" {
+		t.Fatalf("expected certificate filename cert.pem, got %s", c.CertificateFilename)
 	}
 }
 
@@ -43,9 +39,11 @@ func TestCache_GetCertificatePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Cache{
-				CacheDir:            tt.fields.CacheDir,
 				PrivateKeyFilename:  tt.fields.PrivateKeyFilename,
 				CertificateFilename: tt.fields.CertificateFilename,
+			}
+			if err := c.SetDir(tt.fields.CacheDir); err != nil {
+				t.Fatalf("expected no error; got %s", err.Error())
 			}
 			if got := c.GetCertificatePath(); got != tt.want {
 				t.Errorf("GetCertificatePath() = %v, want %v", got, tt.want)

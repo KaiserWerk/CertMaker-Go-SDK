@@ -14,14 +14,19 @@ import (
 )
 
 const (
+	// paths for the CertMaker API
 	apiPrefix                     = "/api/v1"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
-	obtainCertificatePath         = apiPrefix + "/certificate/%d/obtain"
-	obtainPrivateKeyPath          = apiPrefix + "/privatekey/%d/obtain"
+	//obtainCertificatePath         = apiPrefix + "/certificate/%d/obtain"
+	//obtainPrivateKeyPath          = apiPrefix + "/privatekey/%d/obtain"
 	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
 	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
 
+	// local path to place a token for solving the certificate challenge
+	wellKnownPath = ".well-known/certmaker-challenge/token.txt"
+
+	// used HTTP header
 	authenticationHeader      = "X-Auth-Token"
 	certificateLocationHeader = "X-Certificate-Location"
 	privateKeyLocationHeader  = "X-Privatekey-Location"
@@ -35,7 +40,9 @@ type Client struct {
 	httpClient *http.Client
 	baseUrl    string
 	token      string
-	updater    *Updater
+	strictMode bool
+	challengePort uint16
+	updater    *Updater // required for the GetCertificateFunc
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values
@@ -54,9 +61,14 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 		if settings.Transport != nil {
 			c.httpClient.Transport = settings.Transport
 		}
+
+		c.strictMode = settings.StrictMode
+
 	} else {
 		c.httpClient = &http.Client{Timeout: clientDefaultTimeout}
 	}
+
+
 
 	return &c
 }
@@ -96,7 +108,7 @@ func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
 func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(false); valid {
+	if valid := cache.Valid(c.strictMode); valid {
 		return ErrStillValid{}
 	}
 
@@ -134,7 +146,7 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(false); valid {
+	if valid := cache.Valid(c.strictMode); valid {
 		return ErrStillValid{}
 	}
 
@@ -172,7 +184,7 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(false); valid {
+	if valid := cache.Valid(c.strictMode); valid {
 		return ErrStillValid{}
 	}
 
@@ -210,7 +222,7 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(false); valid {
+	if valid := cache.Valid(c.strictMode); valid {
 		return ErrStillValid{}
 	}
 
@@ -297,23 +309,41 @@ func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) erro
 //	return nil
 //}
 
-func (c *Client) GetCertificateFunc(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if c == nil {
+		return nil, fmt.Errorf("client is nil")
+	}
+
+	if c.updater == nil || c.updater.cache == nil {
+		return nil, fmt.Errorf("updater or cache are nil")
+	}
+
 	_ = os.Mkdir(c.updater.cache.CacheDir, 0755)
 
-	if valid := c.updater.cache.Valid(false); valid {
-		return nil, nil // no error in order to not upset the server
+	if valid := c.updater.cache.Valid(c.strictMode); valid {
+		return c.updater.cache.GetTlsCertificate()
 	}
 
 	var err error
 	if c.updater.simpleRequest != nil {
 		err = c.Request(c.updater.cache, c.updater.simpleRequest)
-	} else {
+	} else if c.updater.csr != nil {
 		err = c.RequestWithCSR(c.updater.cache, c.updater.csr)
+	} else {
+		return nil, fmt.Errorf("both SimpleRequest and CSR were nil")
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	tlsCert, err := c.updater.cache.GetTlsCertificate()
 	if err != nil {
 		return nil, err
+	}
+
+	if tlsCert == nil {
+		return nil, fmt.Errorf("for whatever reason the *tls.Certificate was nil")
 	}
 
 	return tlsCert, nil
