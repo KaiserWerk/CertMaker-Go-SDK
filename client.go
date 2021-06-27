@@ -2,11 +2,13 @@ package certmaker
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,12 +18,14 @@ import (
 const (
 	// paths for the CertMaker API
 	apiPrefix                     = "/api/v1"
+	downloadRootCertificatePath   = "/root-certificate/obtain"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
 	//obtainCertificatePath         = apiPrefix + "/certificate/%d/obtain"
 	//obtainPrivateKeyPath          = apiPrefix + "/privatekey/%d/obtain"
 	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
 	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
+	ocspStatusPath         = apiPrefix + "/ocsp"
 
 	// local path to place a token for solving the certificate challenge
 	wellKnownPath = ".well-known/certmaker-challenge/token.txt"
@@ -30,6 +34,7 @@ const (
 	authenticationHeader      = "X-Auth-Token"
 	certificateLocationHeader = "X-Certificate-Location"
 	privateKeyLocationHeader  = "X-Privatekey-Location"
+	challengeLocationHeader   = "X-Challenge-Location"
 
 	minCertValidity      = 3 // in days
 	clientDefaultTimeout = 5 * time.Second
@@ -108,7 +113,7 @@ func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
 func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c.strictMode); valid {
+	if valid := cache.Valid(c); valid {
 		return ErrStillValid{}
 	}
 
@@ -146,7 +151,7 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c.strictMode); valid {
+	if valid := cache.Valid(c); valid {
 		return ErrStillValid{}
 	}
 
@@ -184,7 +189,7 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c.strictMode); valid {
+	if valid := cache.Valid(c); valid {
 		return ErrStillValid{}
 	}
 
@@ -222,7 +227,7 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c.strictMode); valid {
+	if valid := cache.Valid(c); valid {
 		return ErrStillValid{}
 	}
 
@@ -261,9 +266,9 @@ func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) erro
 		return fmt.Errorf("private key file missing")
 	}
 
-	//if valid := isKeyPairValid(cache); valid {
-	//	return ErrStillValid(fmt.Errorf("key pair is still valid")))
-	//}
+	if valid := cache.Valid(c); valid {
+		return ErrStillValid{}
+	}
 
 	jsonCont, err := json.Marshal(csr)
 	if err != nil {
@@ -271,7 +276,7 @@ func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) erro
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, _, err := c.requestNewKeyPair(buf)
+	certLoc, _, err := c.requestNewKeyPair(buf) // TODO adapt for CSR
 	if err != nil {
 		return err
 	}
@@ -320,7 +325,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 
 	_ = os.Mkdir(c.updater.cache.CacheDir, 0755)
 
-	if valid := c.updater.cache.Valid(c.strictMode); valid {
+	if valid := c.updater.cache.Valid(c); valid {
 		return c.updater.cache.GetTlsCertificate()
 	}
 
@@ -421,11 +426,72 @@ func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK { // TODO handle challenge
-		return "", "", fmt.Errorf("expected status code 200, got %d", resp.StatusCode)
+	var certLoc, pkLoc string
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// w/o challenge
+		certLoc := resp.Header.Get(certificateLocationHeader)
+		if certLoc == "" {
+			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
+		}
+
+		pkLoc := resp.Header.Get(privateKeyLocationHeader)
+		if pkLoc == "" {
+			return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
+		}
+	case http.StatusAccepted:
+		// with challenge
+		loc := resp.Header.Get(challengeLocationHeader)
+		if loc == "" {
+			return "", "", fmt.Errorf("missing %s header", challengeLocationHeader)
+		}
+
+		token, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return "", "", err
+		}
+
+		certLoc, pkLoc, err = c.resolveSimpleRequestChallenge(loc, token, c.challengePort)
+		if err != nil {
+			return "", "", err
+		}
+	default:
+		// if it's neither of both, return error
+		return "", "", fmt.Errorf("expected status code 200 or 202, got %d", resp.StatusCode)
 	}
-	_ = resp.Body.Close()
+
+	return certLoc, pkLoc, nil
+}
+
+func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte, challengePort uint16) (string, string, error) {
+	if challengePort == 0 {
+		challengePort = 80
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/certmaker-challenge/token.txt", func(rw http.ResponseWriter, r *http.Request) { rw.Write(token) })
+	server := http.Server{
+		Handler: mux,
+		Addr:    fmt.Sprintf(":%d", challengePort),
+	}
+	server.SetKeepAlivesEnabled(false)
+
+	go server.ListenAndServe()
+	defer server.Shutdown(context.Background())
+
+	req, err := http.NewRequest(http.MethodGet, locationUrl, nil)
+	if err != nil {
+		return "", "", err
+	}
+
+	req.Header.Set(authenticationHeader, c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
 
 	certLoc := resp.Header.Get(certificateLocationHeader)
 	if certLoc == "" {
@@ -438,4 +504,32 @@ func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 	}
 
 	return certLoc, pkLoc, nil
+}
+
+func (c *Client) DownloadRootCertificate(cache *Cache) error {
+	req, err := http.NewRequest(http.MethodGet, c.baseUrl + downloadRootCertificatePath, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set(authenticationHeader, c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	fh, err := os.OpenFile(cache.GetRootCertificatePath(), os.O_CREATE | os.O_WRONLY, 0744)
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+
+	_, err = io.Copy(fh, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
