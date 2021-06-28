@@ -18,9 +18,9 @@ import (
 
 // Cache represents local directory and file paths for certificates and private keys
 type Cache struct {
-	CacheDir            string
-	PrivateKeyFilename  string
-	CertificateFilename string
+	CacheDir                string
+	PrivateKeyFilename      string
+	CertificateFilename     string
 	RootCertificateFilename string
 }
 
@@ -83,7 +83,7 @@ func (c *Cache) GetTlsCertificate() (*tls.Certificate, error) {
 }
 
 func (c *Cache) GetRootCertificate() (*x509.Certificate, error) {
-	if !fileExists(c.GetRootCertificatePath()) {
+	if !c.hasRootCertificate() {
 		return nil, fmt.Errorf("root certificate file does not exist")
 	}
 
@@ -93,6 +93,9 @@ func (c *Cache) GetRootCertificate() (*x509.Certificate, error) {
 	}
 
 	block, _ := pem.Decode(cont)
+	if block == nil {
+		return nil, fmt.Errorf("could not decode PEM block")
+	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return nil, err
@@ -123,16 +126,26 @@ func (c *Cache) Valid(client *Client) bool {
 	}
 
 	if client.strictMode {
+		err = nil
 		fmt.Println("strict mode enabled")
-		// TODO check OCSP responder
+		if !c.hasRootCertificate() {
+			err = client.DownloadRootCertificate(c)
+			if err != nil {
+				fmt.Println("could not download root cert")
+				return false
+			}
+		}
+
 		rootCert, err := c.GetRootCertificate()
 		if err == nil {
 			ocspReq, err := ocsp.CreateRequest(cert, rootCert, &ocsp.RequestOptions{
 				Hash: crypto.SHA512,
 			})
 			if err == nil {
-				req, err := http.NewRequest(http.MethodPost, client.baseUrl + ocspStatusPath, bytes.NewBuffer(ocspReq))
+				req, err := http.NewRequest(http.MethodPost, client.baseUrl+ocspStatusPath, bytes.NewBuffer(ocspReq))
 				if err == nil {
+					req.Header.Set("Content-Type", "application/ocsp-request")
+					req.Header.Set("Accept", "application/ocsp-response")
 					resp, err := client.httpClient.Do(req)
 					if err == nil {
 						defer resp.Body.Close()
@@ -142,8 +155,10 @@ func (c *Cache) Valid(client *Client) bool {
 							ocspResp, err := ocsp.ParseResponse(b.Bytes(), rootCert)
 							if err == nil {
 								if ocspResp.Status != ocsp.Good && ocspResp.Status != ocsp.Unknown {
+									fmt.Println("status is neither good nor unknown!")
 									return false
 								}
+								fmt.Println("certificate validated!")
 							}
 						}
 					}
@@ -158,4 +173,8 @@ func (c *Cache) Valid(client *Client) bool {
 	}
 
 	return true
+}
+
+func (c *Cache) hasRootCertificate() bool {
+	return fileExists(c.GetRootCertificatePath())
 }

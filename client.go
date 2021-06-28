@@ -18,11 +18,11 @@ import (
 const (
 	// paths for the CertMaker API
 	apiPrefix                     = "/api/v1"
-	downloadRootCertificatePath   = "/root-certificate/obtain"
+	downloadRootCertificatePath   = "/api/v1" + "/root-certificate/obtain"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
-	//obtainCertificatePath         = apiPrefix + "/certificate/%d/obtain"
-	//obtainPrivateKeyPath          = apiPrefix + "/privatekey/%d/obtain"
+	//obtainCertificatePath       = apiPrefix + "/certificate/%d/obtain"
+	//obtainPrivateKeyPath        = apiPrefix + "/privatekey/%d/obtain"
 	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
 	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
 	ocspStatusPath         = apiPrefix + "/ocsp"
@@ -35,6 +35,8 @@ const (
 	certificateLocationHeader = "X-Certificate-Location"
 	privateKeyLocationHeader  = "X-Privatekey-Location"
 	challengeLocationHeader   = "X-Challenge-Location"
+
+	pemContentType = "application/x-pem-file"
 
 	minCertValidity      = 3 // in days
 	clientDefaultTimeout = 5 * time.Second
@@ -370,7 +372,7 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 		return fmt.Errorf("certificate request: expected status 200, got %d", certReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY | os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
@@ -400,7 +402,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY | os.O_CREATE, 0744)
 	if err != nil {
 		return err
 	}
@@ -519,6 +521,14 @@ func (c *Client) DownloadRootCertificate(cache *Cache) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expected status code 200, got %d", resp.StatusCode)
+	}
+
+	if resp.Header.Get("Content-Type") != pemContentType {
+		return fmt.Errorf("expected Content-Type %s, git %s", pemContentType, resp.Header.Get("Content-Type"))
+	}
 
 	fh, err := os.OpenFile(cache.GetRootCertificatePath(), os.O_CREATE | os.O_WRONLY, 0744)
 	if err != nil {
