@@ -18,14 +18,12 @@ import (
 const (
 	// paths for the CertMaker API
 	apiPrefix                     = "/api/v1"
-	downloadRootCertificatePath   = "/api/v1" + "/root-certificate/obtain"
+	downloadRootCertificatePath   = apiPrefix + "/root-certificate/obtain"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
-	//obtainCertificatePath       = apiPrefix + "/certificate/%d/obtain"
-	//obtainPrivateKeyPath        = apiPrefix + "/privatekey/%d/obtain"
 	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
 	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
-	ocspStatusPath         = apiPrefix + "/ocsp"
+	ocspStatusPath                = apiPrefix + "/ocsp"
 
 	// local path to place a token for solving the certificate challenge
 	wellKnownPath = ".well-known/certmaker-challenge/token.txt"
@@ -44,12 +42,12 @@ const (
 
 // Client represents the structure required to obtain certificates (and private keys) from a remote location.
 type Client struct {
-	httpClient *http.Client
-	baseUrl    string
-	token      string
-	strictMode bool
+	httpClient    *http.Client
+	baseUrl       string
+	token         string
+	strictMode    bool
 	challengePort uint16
-	updater    *Updater // required for the GetCertificateFunc
+	updater       *Updater // required for the GetCertificateFunc
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values
@@ -74,8 +72,6 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 	} else {
 		c.httpClient = &http.Client{Timeout: clientDefaultTimeout}
 	}
-
-
 
 	return &c
 }
@@ -137,7 +133,7 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading certificate from location: " + err.Error())
+		return fmt.Errorf("RequestForDomains: error downloading certificate from location: " + err.Error())
 	}
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
@@ -175,7 +171,7 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading certificate from location: " + err.Error())
+		return fmt.Errorf("RequestForIps: error downloading certificate from location: " + err.Error())
 	}
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
@@ -213,7 +209,7 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading certificate from location: " + err.Error())
+		return fmt.Errorf("RequestForEmails: error downloading certificate from location: " + err.Error())
 	}
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
@@ -225,7 +221,7 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 }
 
 // Request requests a fresh certificate and private key with the meta data contained in the
-// SimpleRequest.
+// *SimpleRequest and puts it into *Cache.
 func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
@@ -244,9 +240,17 @@ func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 		return err
 	}
 
+	if certLoc == "" {
+		return fmt.Errorf("cert location is empty")
+	}
+
+	if pkLoc == "" {
+		return fmt.Errorf("private key Location is empty")
+	}
+
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading certificate from location: " + err.Error())
+		return fmt.Errorf("Request: error downloading certificate from location: " + err.Error())
 	}
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
@@ -285,7 +289,7 @@ func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) erro
 
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading certificate from location '%s': %s", certLoc, err.Error())
+		return fmt.Errorf("RequestWithCSR: error downloading certificate from location '%s': %s", certLoc, err.Error())
 	}
 
 	//err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
@@ -357,6 +361,9 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 }
 
 func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation string) error {
+	if certLocation == "" {
+		return fmt.Errorf("certificate Location is empty")
+	}
 	req, err := http.NewRequest(http.MethodGet, certLocation, nil)
 	if err != nil {
 		return err
@@ -372,7 +379,7 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 		return fmt.Errorf("certificate request: expected status 200, got %d", certReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY | os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -387,6 +394,10 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 }
 
 func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string) error {
+	if keyLocation == "" {
+		return fmt.Errorf("key Location is empty")
+	}
+
 	req, err := http.NewRequest(http.MethodGet, keyLocation, nil)
 	if err != nil {
 		return err
@@ -402,7 +413,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY | os.O_CREATE, 0744)
+	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -419,14 +430,14 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
 	}
 
 	req.Header.Set(authenticationHeader, c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("could not execute HTTP request: " + err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -434,12 +445,12 @@ func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// w/o challenge
-		certLoc := resp.Header.Get(certificateLocationHeader)
+		certLoc = resp.Header.Get(certificateLocationHeader)
 		if certLoc == "" {
 			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
 		}
 
-		pkLoc := resp.Header.Get(privateKeyLocationHeader)
+		pkLoc = resp.Header.Get(privateKeyLocationHeader)
 		if pkLoc == "" {
 			return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
 		}
@@ -477,6 +488,9 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	server := http.Server{
 		Handler: mux,
 		Addr:    fmt.Sprintf(":%d", challengePort),
+		ReadTimeout: 3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+		ReadHeaderTimeout: 1 * time.Second,
 	}
 	server.SetKeepAlivesEnabled(false)
 
@@ -509,7 +523,7 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 }
 
 func (c *Client) DownloadRootCertificate(cache *Cache) error {
-	req, err := http.NewRequest(http.MethodGet, c.baseUrl + downloadRootCertificatePath, nil)
+	req, err := http.NewRequest(http.MethodGet, c.baseUrl+downloadRootCertificatePath, nil)
 	if err != nil {
 		return err
 	}
@@ -530,7 +544,7 @@ func (c *Client) DownloadRootCertificate(cache *Cache) error {
 		return fmt.Errorf("expected Content-Type %s, git %s", pemContentType, resp.Header.Get("Content-Type"))
 	}
 
-	fh, err := os.OpenFile(cache.GetRootCertificatePath(), os.O_CREATE | os.O_WRONLY, 0744)
+	fh, err := os.OpenFile(cache.GetRootCertificatePath(), os.O_CREATE|os.O_WRONLY, 0744)
 	if err != nil {
 		return err
 	}
