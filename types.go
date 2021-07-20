@@ -29,8 +29,8 @@ type SimpleRequestSubject struct {
 	PostalCode    string `json:"postal_code"`
 }
 
-// Updater contains data relevant to automatic certificate updating
-type Updater struct {
+// updater contains data relevant to automatic certificate updating
+type updater struct {
 	cache         *Cache
 	simpleRequest *SimpleRequest
 	csr           *x509.CertificateRequest

@@ -16,7 +16,7 @@ func TestClient_DownloadRootCertificate(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -53,7 +53,7 @@ func TestClient_GetCertificateFunc(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		chi *tls.ClientHelloInfo
@@ -96,7 +96,7 @@ func TestClient_Request(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -134,7 +134,7 @@ func TestClient_RequestForDomains(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache  *Cache
@@ -173,7 +173,7 @@ func TestClient_RequestForEmails(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache  *Cache
@@ -212,7 +212,7 @@ func TestClient_RequestForIps(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -251,7 +251,7 @@ func TestClient_RequestWithCSR(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -289,7 +289,7 @@ func TestClient_SetProxy(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		addr string
@@ -326,7 +326,7 @@ func TestClient_SetupWithCSR(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -360,7 +360,7 @@ func TestClient_SetupWithSimpleRequest(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache *Cache
@@ -394,7 +394,7 @@ func TestClient_downloadCertificateFromLocation(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache        *Cache
@@ -432,7 +432,7 @@ func TestClient_downloadPrivateKeyFromLocation(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		cache       *Cache
@@ -470,7 +470,7 @@ func TestClient_requestNewKeyPair(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		body io.Reader
@@ -517,7 +517,7 @@ func TestClient_resolveSimpleRequestChallenge(t *testing.T) {
 		token         string
 		strictMode    bool
 		challengePort uint16
-		updater       *Updater
+		updater       *updater
 	}
 	type args struct {
 		locationUrl   string

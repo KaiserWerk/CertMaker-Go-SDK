@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 )
@@ -21,7 +20,7 @@ const (
 	downloadRootCertificatePath   = apiPrefix + "/root-certificate/obtain"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
-	solveChallengePath            = apiPrefix + "/challenge/%d/solve"
+	//solveChallengePath            = apiPrefix + "/challenge/%d/solve"
 	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
 	ocspStatusPath                = apiPrefix + "/ocsp"
 
@@ -36,7 +35,7 @@ const (
 
 	pemContentType = "application/x-pem-file"
 
-	minCertValidity      = 3 // in days
+	minCertValidityDays  = 3
 	clientDefaultTimeout = 5 * time.Second
 )
 
@@ -47,7 +46,7 @@ type Client struct {
 	token         string
 	strictMode    bool
 	challengePort uint16
-	updater       *Updater // required for the GetCertificateFunc
+	updater       *updater // required for the GetCertificateFunc
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values
@@ -76,23 +75,9 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 	return &c
 }
 
-// SetProxy sets up the *Client to use the supplied address as proxy address
-func (c *Client) SetProxy(addr string) error {
-	u, err := url.ParseRequestURI(addr)
-	if err != nil {
-		return err
-	}
-
-	c.httpClient.Transport = &http.Transport{
-		Proxy: http.ProxyURL(u),
-	}
-
-	return nil
-}
-
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
 func (c *Client) SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest) {
-	c.updater = &Updater{
+	c.updater = &updater{
 		cache:         cache,
 		simpleRequest: sr,
 	}
@@ -100,7 +85,7 @@ func (c *Client) SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest) {
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
 func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
-	c.updater = &Updater{
+	c.updater = &updater{
 		cache: cache,
 		csr:   csr,
 	}
@@ -108,7 +93,7 @@ func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
 
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) without a care about other settings.
-func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) error {
+func (c *Client) RequestForDomains(cache *Cache, domains []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
 	if valid := cache.Valid(c); valid {
@@ -116,7 +101,7 @@ func (c *Client) RequestForDomains(cache *Cache, domain []string, days int) erro
 	}
 
 	cr := SimpleRequest{
-		Domains: domain,
+		Domains: domains,
 		Days:    days,
 	}
 
