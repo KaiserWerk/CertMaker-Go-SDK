@@ -14,7 +14,7 @@ type Client struct {
 ```
 
 The ``Client``'s purpose is to request and download certificates (and private keys, if any). That's why you can supply
-an API Key and a base URL in the ``NewClient()`` function. The ``Client`` usually requires a valid ``Cache`` to work
+an API Key and a base URL to the ``NewClient()`` function. The ``Client`` usually requires a valid ``Cache`` to work
 properly.
 
 ```golang
@@ -27,7 +27,8 @@ type Cache struct {
 ```
 
 Unlike the ``Client``, the ``Cache`` only has exported fields which can be manipulated by you, the developer.
-There is also a ``NewCache()`` function, which sets up a ``Cache`` with useful defaults.
+There is also a ``NewCache()`` function, which sets up a ``Cache`` with useful defaults. The ``Cache`` is required
+to interact with the filesystem.
 
 ## The DNS name/IP address verification challenge
 
