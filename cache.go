@@ -121,7 +121,7 @@ func (c *Cache) Valid(client *Client) bool {
 	}
 
 	diff := cert.NotAfter.Sub(time.Now())
-	if diff.Hours() < 24*minCertValidity {
+	if diff.Hours() < 24*minCertValidityDays {
 		return false
 	}
 
@@ -159,11 +159,23 @@ func (c *Cache) Valid(client *Client) bool {
 									return false
 								}
 								fmt.Println("certificate validated!")
+							} else {
+								fmt.Println("could not parse response: " + err.Error())
 							}
+						} else {
+							fmt.Println("could not copy: " + err.Error())
 						}
+					} else {
+						fmt.Println("could not execute request: " + err.Error())
 					}
+				} else {
+					fmt.Println("could not create request: " + err.Error())
 				}
+			} else {
+				fmt.Println("could not create OCSP request: " + err.Error())
 			}
+		} else {
+			fmt.Println("could not get root certificate: " + err.Error())
 		}
 
 		if err != nil {
