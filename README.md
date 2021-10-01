@@ -165,13 +165,7 @@ srv := http.Server{
     Addr: ":1337",
     Handler: router,
     TLSConfig: &tls.Config{
-        GetCertificate: func(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
-            cert, err := client.GetCertificateFunc(chi)
-            if err != nil && errors.Is(err, certmaker.ErrStillValid{}) {
-                return nil, err
-            }
-            return cert, nil
-        },
+        GetCertificate: client.GetCertificateFunc,
     }, 
 }
 
