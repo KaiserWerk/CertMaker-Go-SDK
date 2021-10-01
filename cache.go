@@ -104,6 +104,8 @@ func (c *Cache) GetRootCertificate() (*x509.Certificate, error) {
 	return cert, nil
 }
 
+// Valid returns whether the certificate in *Cache is valid (file exists, it is not expired, and if strictmode
+// is enabled, also checks if it is revoked)
 func (c *Cache) Valid(client *Client) bool {
 	if !fileExists(c.GetCertificatePath()) {
 		return false

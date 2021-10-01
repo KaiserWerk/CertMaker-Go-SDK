@@ -21,8 +21,8 @@ const (
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
 	//solveChallengePath            = apiPrefix + "/challenge/%d/solve"
-	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
-	ocspStatusPath                = apiPrefix + "/ocsp"
+	revokeCertificatePath = apiPrefix + "/certificate/%d/revoke"
+	ocspStatusPath        = apiPrefix + "/ocsp"
 
 	// local path to place a token for solving the certificate challenge
 	wellKnownPath = ".well-known/certmaker-challenge/token.txt"
@@ -205,7 +205,7 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 	return nil
 }
 
-// Request requests a fresh certificate and private key with the meta data contained in the
+// Request requests a fresh certificate and private key with the metadata contained in the
 // *SimpleRequest and puts it into *Cache.
 func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
@@ -326,7 +326,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 	} else if c.updater.csr != nil {
 		err = c.RequestWithCSR(c.updater.cache, c.updater.csr)
 	} else {
-		return nil, fmt.Errorf("both SimpleRequest and CSR were nil")
+		return nil, fmt.Errorf("both SimpleRequest and CSR were nil, that means a Setup method was not called")
 	}
 
 	if err != nil {
@@ -471,10 +471,10 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/certmaker-challenge/token.txt", func(rw http.ResponseWriter, r *http.Request) { rw.Write(token) })
 	server := http.Server{
-		Handler: mux,
-		Addr:    fmt.Sprintf(":%d", challengePort),
-		ReadTimeout: 3 * time.Second,
-		WriteTimeout: 3 * time.Second,
+		Handler:           mux,
+		Addr:              fmt.Sprintf(":%d", challengePort),
+		ReadTimeout:       3 * time.Second,
+		WriteTimeout:      3 * time.Second,
 		ReadHeaderTimeout: 1 * time.Second,
 	}
 	server.SetKeepAlivesEnabled(false)
