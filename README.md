@@ -56,7 +56,7 @@ token := "Ar8S71NBblDCMVJD0dkftX36ea5zG7QSI7Q2trkEVwBZpqsQzNTFneSgMcM1" // taken
 cache, _ := certmaker.NewCache()
 client := certmaker.NewClient(certMakerInstance, token, nil)
 ```
-You can modify the ``Client``'s underlying HTTP client by supplying client settings as third
+You can modify the ``Client``'s underlying HTTP client and other options by supplying client settings as third
 parameter, e.g.:
 
 ```golang
