@@ -169,5 +169,8 @@ srv := http.Server{
     }, 
 }
 
-log.Fatal(srv.ListenAndServeTLS("", "")) // now make a call to https://localhost:1337/
+log.Fatal(srv.ListenAndServeTLS("", "")) 
+// now make a call to https://localhost:1337/
+// If you get an error message stating that the certificate is invalid, that just
+// means that you didn't install the root certificate yet.
 ```
