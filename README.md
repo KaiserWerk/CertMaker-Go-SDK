@@ -148,10 +148,10 @@ err = client.RequestWithCSR(cache, csr)
 ``SetupWithCSR(cache *Cache, csr *x509.CertificateRequest)`` are preparing calls to make 
 before using ``GetCertificateFunc``.
 
-``GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)`` can be used by an 
-``http.Server`` struct (actually anything that uses a ``*tls.Config{}``) to read certificate 
-from an arbitrary source. Also, certificates are automatically re-read when required (usually shortly 
-before expiration). That means fire and forget, no need for loops or cronjobs.
+``GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)`` can be used by anything 
+that uses a ``*tls.Config{}`` to read a certificate from an arbitrary source. 
+Also, certificates are automatically re-read when required (shortly 
+before expiration at the latest). That means fire and forget, no need for loops or cronjobs.
 
 This feature is __Work in Progress__ and does not yet work as intended!
 
@@ -185,8 +185,8 @@ srv := http.Server{
     }, 
 }
 
-log.Fatal(srv.ListenAndServeTLS("", "")) 
-// now make a call to https://localhost:1337/
+log.Fatal(srv.ListenAndServeTLS("", "")) // leave these two fields empty
+// now make a call to https://localhost:1337/ (https, not http!)
 // If you get an error message stating that the certificate is invalid, that just
 // means that you didn't install the root certificate yet.
 ```
