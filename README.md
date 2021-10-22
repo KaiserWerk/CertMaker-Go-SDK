@@ -63,10 +63,17 @@ parameter, e.g.:
 // ...
 cache, _ := certmaker.NewCache()
 client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
-    Transport:     nil, // for the HTTP client
-    ClientTimeout: 4 * time.Second, // for the HTTP client
-    StrictMode:    true, // when checking if a local certificate is still valid, also check with the CertMaker API if it's been revoked
-    ChallengePort: 8000, // make sure the port is open
+    // a custom *http.Transport{} for the HTTP client
+    Transport:     nil, 
+    // the timeout for the HTTP client (default 5 seconds)
+    ClientTimeout: 4 * time.Second,
+    // when checking if a local certificate is still valid, also check with the CertMaker API 
+    // if it's been revoked
+    StrictMode:    true,
+    // make sure the port is open 
+    // the port is only required when the verification challenge is enabled
+    // on the API's side
+    ChallengePort: 8000, 
 })
 ```
 
@@ -74,7 +81,16 @@ client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSetting
 
 If the challenge is enabled on the server side, a token has to be reachable via every DNS name or IP
 address. This means that at least one port must be open to be used for the solving part. You can supply
-it using the ``certmaker.ClientSettings{}``
+it using the ``certmaker.ClientSettings{}``.
+Email addresses have no relevance in the verification challenge.
+
+## Request types
+
+There are two types of certificate requests. One is the ``SimpleRequest``, the other is the
+``*x509.CertificateRequest``.
+A ``SimpleRequest`` requests a private key with the corresponding certificate. A 
+``*x509.CertificateRequest`` is created from an existing private key, so just a certificate is
+requested.
 
 ## Convenience methods
 
