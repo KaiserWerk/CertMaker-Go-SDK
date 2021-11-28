@@ -65,14 +65,13 @@ cache, _ := certmaker.NewCache()
 client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
     // a custom *http.Transport{} for the HTTP client
     Transport:     nil, 
-    // the timeout for the HTTP client (default 5 seconds)
+    // the timeout for the HTTP client (default is 5 seconds)
     ClientTimeout: 4 * time.Second,
     // when checking if a local certificate is still valid, also check with the CertMaker API 
     // if it's been revoked
     StrictMode:    true,
-    // make sure the port is open 
-    // the port is only required when the verification challenge is enabled
-    // on the API's side
+    // the port is only required if the verification challenge (see below) is enabled
+    // on the API's side and make sure it is open
     ChallengePort: 8000, 
 })
 ```
