@@ -1,5 +1,7 @@
 # CertMaker Go SDK
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/KaiserWerk/CertMaker-Go-SDK.svg)](https://pkg.go.dev/github.com/KaiserWerk/CertMaker-Go-SDK)
+
 The Golang *software development kit* for the *[CertMaker](https://github.com/KaiserWerk/CertMaker)*.
 
 The SDK allows you to easily obtain and revoke certificates in your custom Go applications. There are quite a few
