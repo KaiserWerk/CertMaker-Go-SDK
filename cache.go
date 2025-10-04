@@ -8,31 +8,46 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
 )
 
-// Cache represents local directory and file paths for certificates and private keys
-type Cache struct {
+// FileCache represents a local directory and file paths for certificates and private keys.
+type FileCache struct {
 	CacheDir                string
 	PrivateKeyFilename      string
 	CertificateFilename     string
 	RootCertificateFilename string
 }
 
-// NewCache returns a *Cache with default values: CacheDir is .certs,
-// CertificateFilename is cert.pem, PrivateKeyFilename is key.pem
-func NewCache() (*Cache, error) {
-	cache := Cache{}
+// NewCache returns a *FileCache with default values:
+//   - CacheDir = ".certs"
+//   - CertificateFilename = "cert.pem"
+//   - PrivateKeyFilename = "key.pem"
+//   - RootCertificateFilename = "root-cert.pem"
+//
+// The cache directory is created relative to the current working directory.
+// The private key file contains the PEM-encoded private key.
+// The certificate file contains the PEM-encoded certificate (leaf).
+// The certificate file may contain a full chain, starting with the leaf certificate.
+//
+// Values may be modified after creation, but they should not be modified after first use.
+func NewCache() (*FileCache, error) {
+	cache := FileCache{}
 	baseDir, err := filepath.Abs(".")
 	if err != nil {
 		return nil, err
 	}
+
 	cache.CacheDir = filepath.Join(baseDir, ".certs")
+	err = os.MkdirAll(cache.CacheDir, 0700)
+	if err != nil {
+		return nil, err
+	}
 	cache.CertificateFilename = "cert.pem"
 	cache.PrivateKeyFilename = "key.pem"
 	cache.RootCertificateFilename = "root-cert.pem"
@@ -40,8 +55,14 @@ func NewCache() (*Cache, error) {
 	return &cache, nil
 }
 
-func (c *Cache) SetDir(dir string) error {
+// SetDir sets the directory where the cache files are stored.
+// The directory is created if it does not exist.
+func (c *FileCache) SetDir(dir string) error {
 	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(baseDir, 0700)
 	if err != nil {
 		return err
 	}
@@ -49,32 +70,32 @@ func (c *Cache) SetDir(dir string) error {
 	return nil
 }
 
-// GetCertificatePath returns the full path the Cache's certificate file
-func (c *Cache) GetCertificatePath() string {
+// CertificatePath returns the absolute path to the Cache's certificate file.
+func (c *FileCache) CertificatePath() string {
 	return filepath.Join(c.CacheDir, c.CertificateFilename)
 }
 
-// GetPrivateKeyPath returns the full path the Cache's private key file
-func (c *Cache) GetPrivateKeyPath() string {
+// PrivateKeyPath returns the absolute path to the Cache's private key file.
+func (c *FileCache) PrivateKeyPath() string {
 	return filepath.Join(c.CacheDir, c.PrivateKeyFilename)
 }
 
-// GetRootCertificatePath returns the full path the Cache's root certificate file
-// Usually there is no need to touch that at all
-func (c *Cache) GetRootCertificatePath() string {
+// RootCertificatePath returns the absolute path to the Cache's root certificate file.
+func (c *FileCache) RootCertificatePath() string {
 	return filepath.Join(c.CacheDir, c.RootCertificateFilename)
 }
 
-func (c *Cache) GetTlsCertificate() (*tls.Certificate, error) {
-	if !fileExists(c.GetPrivateKeyPath()) {
+// TLSCertificate loads and returns a tls.Certificate from the Cache's certificate and private key files.
+func (c *FileCache) TLSCertificate() (*tls.Certificate, error) {
+	if !fileExists(c.PrivateKeyPath()) {
 		return nil, fmt.Errorf("private key file missing")
 	}
 
-	if !fileExists(c.GetCertificatePath()) {
+	if !fileExists(c.CertificatePath()) {
 		return nil, fmt.Errorf("certificate file missing")
 	}
 
-	tlsCert, err := tls.LoadX509KeyPair(c.GetCertificatePath(), c.GetPrivateKeyPath())
+	tlsCert, err := tls.LoadX509KeyPair(c.CertificatePath(), c.PrivateKeyPath())
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +103,13 @@ func (c *Cache) GetTlsCertificate() (*tls.Certificate, error) {
 	return &tlsCert, nil
 }
 
-func (c *Cache) GetRootCertificate() (*x509.Certificate, error) {
+// RootCertificate loads and returns the root certificate from the Cache's root certificate file.
+func (c *FileCache) RootCertificate() (*x509.Certificate, error) {
 	if !c.hasRootCertificate() {
 		return nil, fmt.Errorf("root certificate file does not exist")
 	}
 
-	cont, err := ioutil.ReadFile(c.GetRootCertificatePath())
+	cont, err := os.ReadFile(c.RootCertificatePath())
 	if err != nil {
 		return nil, err
 	}
@@ -104,91 +126,82 @@ func (c *Cache) GetRootCertificate() (*x509.Certificate, error) {
 	return cert, nil
 }
 
-// Valid returns whether the certificate in *Cache is valid (file exists, it is not expired, and if strictmode
-// is enabled, also checks if it is revoked)
-func (c *Cache) Valid(client *Client) bool {
-	if !fileExists(c.GetCertificatePath()) {
-		return false
+// Valid returns nil if the certificate in *FileCache is found to be valid.
+// The following checks are performed:
+//   - does the file exist
+//   - is the certificate expired
+//
+// If strictmode is enabled, *Client additionally checks whether the certificate is revoked via OCSP request.
+//
+// If any of the checks fail, an error is returned.
+func (c *FileCache) Valid(client *Client) error {
+	if !fileExists(c.CertificatePath()) {
+		return fmt.Errorf("certificate file missing")
 	}
 
-	cont, err := ioutil.ReadFile(c.GetCertificatePath())
+	cont, err := os.ReadFile(c.CertificatePath())
 	if err != nil {
-		return false
+		return fmt.Errorf("could not read certificate file: %w", err)
 	}
 
 	block, _ := pem.Decode(cont)
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return false
+		return fmt.Errorf("could not parse certificate: %w", err)
 	}
 
-	diff := cert.NotAfter.Sub(time.Now())
-	if diff.Hours() < 24*minCertValidityDays {
-		return false
+	diff := time.Until(cert.NotAfter)
+	if diff.Hours() < minCertValidityHours {
+		return fmt.Errorf("certificate is about to expire")
 	}
 
 	if client.strictMode {
-		err = nil
-		fmt.Println("strict mode enabled")
+		fmt.Println("strict mode enabled; checking revocation status...")
 		if !c.hasRootCertificate() {
 			err = client.DownloadRootCertificate(c)
 			if err != nil {
-				fmt.Println("could not download root cert")
-				return false
+				return fmt.Errorf("could not download root cert: %w", err)
 			}
 		}
 
-		rootCert, err := c.GetRootCertificate()
-		if err == nil {
-			ocspReq, err := ocsp.CreateRequest(cert, rootCert, &ocsp.RequestOptions{
-				Hash: crypto.SHA512,
-			})
-			if err == nil {
-				req, err := http.NewRequest(http.MethodPost, client.baseUrl+ocspStatusPath, bytes.NewBuffer(ocspReq))
-				if err == nil {
-					req.Header.Set("Content-Type", "application/ocsp-request")
-					req.Header.Set("Accept", "application/ocsp-response")
-					resp, err := client.httpClient.Do(req)
-					if err == nil {
-						defer resp.Body.Close()
-						var b bytes.Buffer
-						_, err = io.Copy(&b, resp.Body)
-						if err == nil {
-							ocspResp, err := ocsp.ParseResponse(b.Bytes(), rootCert)
-							if err == nil {
-								if ocspResp.Status != ocsp.Good && ocspResp.Status != ocsp.Unknown {
-									fmt.Println("status is neither good nor unknown!")
-									return false
-								}
-								fmt.Println("certificate validated!")
-							} else {
-								fmt.Println("could not parse response: " + err.Error())
-							}
-						} else {
-							fmt.Println("could not copy: " + err.Error())
-						}
-					} else {
-						fmt.Println("could not execute request: " + err.Error())
-					}
-				} else {
-					fmt.Println("could not create request: " + err.Error())
-				}
-			} else {
-				fmt.Println("could not create OCSP request: " + err.Error())
-			}
-		} else {
-			fmt.Println("could not get root certificate: " + err.Error())
-		}
-
+		rootCert, err := c.RootCertificate()
 		if err != nil {
-			fmt.Println("strict mode error: " + err.Error())
-			return false
+			return fmt.Errorf("could not get root certificate: %w", err)
+		}
+		ocspReq, err := ocsp.CreateRequest(cert, rootCert, &ocsp.RequestOptions{
+			Hash: crypto.SHA512,
+		})
+		if err != nil {
+			return fmt.Errorf("could not create OCSP request: %w", err)
+		}
+		req, err := http.NewRequest(http.MethodPost, client.baseUrl+ocspStatusPath, bytes.NewBuffer(ocspReq))
+		if err != nil {
+			return fmt.Errorf("could not create HTTP request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/ocsp-request")
+		req.Header.Set("Accept", "application/ocsp-response")
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("could not send HTTP request: %w", err)
+		}
+		defer resp.Body.Close()
+		var b bytes.Buffer
+		_, err = io.Copy(&b, resp.Body)
+		if err != nil {
+			return fmt.Errorf("could not read HTTP response body: %w", err)
+		}
+		ocspResp, err := ocsp.ParseResponse(b.Bytes(), rootCert)
+		if err != nil {
+			return fmt.Errorf("could not parse OCSP response: %w", err)
+		}
+		if ocspResp.Status != ocsp.Good && ocspResp.Status != ocsp.Unknown {
+			return fmt.Errorf("status is neither good nor unknown!")
 		}
 	}
 
-	return true
+	return nil
 }
 
-func (c *Cache) hasRootCertificate() bool {
-	return fileExists(c.GetRootCertificatePath())
+func (c *FileCache) hasRootCertificate() bool {
+	return fileExists(c.RootCertificatePath())
 }

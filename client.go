@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -35,7 +34,7 @@ const (
 
 	pemContentType = "application/x-pem-file"
 
-	minCertValidityDays  = 3
+	minCertValidityHours = 12
 	clientDefaultTimeout = 5 * time.Second
 )
 
@@ -49,7 +48,9 @@ type Client struct {
 	updater       *updater // required for the GetCertificateFunc
 }
 
-// NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values
+// NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values.
+// Optionally, you can pass a *ClientSettings struct to alter the behaviour of the client.
+// If settings is nil, the client will use default values.
 func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 	c := Client{
 		baseUrl: baseUrl,
@@ -76,7 +77,7 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 }
 
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest) {
+func (c *Client) SetupWithSimpleRequest(cache *FileCache, sr *SimpleRequest) {
 	c.updater = &updater{
 		cache:         cache,
 		simpleRequest: sr,
@@ -84,7 +85,7 @@ func (c *Client) SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest) {
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
+func (c *Client) SetupWithCSR(cache *FileCache, csr *x509.CertificateRequest) {
 	c.updater = &updater{
 		cache: cache,
 		csr:   csr,
@@ -93,11 +94,12 @@ func (c *Client) SetupWithCSR(cache *Cache, csr *x509.CertificateRequest) {
 
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) without a care about other settings.
-func (c *Client) RequestForDomains(cache *Cache, domains []string, days int) error {
+func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c); valid {
-		return ErrStillValid{}
+	err := cache.Valid(c)
+	if err == nil {
+		return ErrStillValid
 	}
 
 	cr := SimpleRequest{
@@ -131,11 +133,12 @@ func (c *Client) RequestForDomains(cache *Cache, domains []string, days int) err
 
 // RequestForIps is a convenience method to fetch a certificate and a private
 // key for just the selected IP address(es) without a care about other settings.
-func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
+func (c *Client) RequestForIps(cache *FileCache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c); valid {
-		return ErrStillValid{}
+	err := cache.Valid(c)
+	if err == nil {
+		return ErrStillValid
 	}
 
 	cr := SimpleRequest{
@@ -169,11 +172,12 @@ func (c *Client) RequestForIps(cache *Cache, ips []string, days int) error {
 
 // RequestForEmails is a convenience method to fetch a certificate and a private
 // key for just the selected email address(es) without a care about other settings.
-func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error {
+func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c); valid {
-		return ErrStillValid{}
+	err := cache.Valid(c)
+	if err == nil {
+		return ErrStillValid
 	}
 
 	cr := SimpleRequest{
@@ -207,11 +211,12 @@ func (c *Client) RequestForEmails(cache *Cache, emails []string, days int) error
 
 // Request requests a fresh certificate and private key with the metadata contained in the
 // *SimpleRequest and puts it into *Cache.
-func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
+func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if valid := cache.Valid(c); valid {
-		return ErrStillValid{}
+	err := cache.Valid(c)
+	if err == nil {
+		return ErrStillValid
 	}
 
 	jsonCont, err := json.Marshal(cr)
@@ -250,15 +255,16 @@ func (c *Client) Request(cache *Cache, cr *SimpleRequest) error {
 // commonly known as a Certificate Signing Request (CSR).
 // The *Cache must have the PrivateKeyFilename field set to a file containing a valid private key. Otherwise
 // the process will fail.
-func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) error {
+func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
-	if !fileExists(cache.GetPrivateKeyPath()) {
+	if !fileExists(cache.PrivateKeyPath()) {
 		return fmt.Errorf("private key file missing")
 	}
 
-	if valid := cache.Valid(c); valid {
-		return ErrStillValid{}
+	err := cache.Valid(c)
+	if err == nil {
+		return ErrStillValid
 	}
 
 	jsonCont, err := json.Marshal(csr)
@@ -277,33 +283,22 @@ func (c *Client) RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) erro
 		return fmt.Errorf("RequestWithCSR: error downloading certificate from location '%s': %s", certLoc, err.Error())
 	}
 
-	//err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
-	//if err != nil {
-	//	return fmt.Errorf("error downloading private key from location '%s': %s", pkLoc, err.Error())
-	//}
-
 	return nil
 }
 
 // RequestRepeatedly is like Request, but runs repeatedly with the supplied interval until you tell it to stop. This is
 // useful for servers that run for weeks or months without interruption.
 // Since this is a blocking method, please call it as a goroutine.
-//
-// To stop execution, write true into the stopChan channel. If you don't need the ability to stop, pass nil
-// as parameter for the stopChan.
-//func (c *Client) RequestRepeatedly(cache *Cache, cr *SimpleRequest, interval time.Duration, stopChan chan bool) error {
-//	return nil
-//}
+func (c *Client) RequestRepeatedly(cache *FileCache, cr *SimpleRequest, interval time.Duration, stopChan chan bool) error {
+	return nil
+}
 
 // RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval
 // until you tell it to stop. This is useful for servers that run for weeks or months without interruption.
 // Since this is a blocking method, please call it as a goroutine.
-//
-// To stop execution, write true into the stopChan channel. If you don't need the ability to stop, pass nil
-// as parameter for the stopChan.
-//func (c *Client) RequestRepeatedlyWithCSR(cache *Cache, csr x509.CertificateRequest, interval time.Duration, stopChan chan bool) error {
-//	return nil
-//}
+func (c *Client) RequestRepeatedlyWithCSR(cache *FileCache, csr x509.CertificateRequest, interval time.Duration, stopChan chan bool) error {
+	return nil
+}
 
 func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if c == nil {
@@ -316,11 +311,11 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 
 	_ = os.Mkdir(c.updater.cache.CacheDir, 0755)
 
-	if valid := c.updater.cache.Valid(c); valid {
-		return c.updater.cache.GetTlsCertificate()
+	err := c.updater.cache.Valid(c)
+	if err == nil {
+		return c.updater.cache.TLSCertificate()
 	}
 
-	var err error
 	if c.updater.simpleRequest != nil {
 		err = c.Request(c.updater.cache, c.updater.simpleRequest)
 	} else if c.updater.csr != nil {
@@ -333,7 +328,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return nil, err
 	}
 
-	tlsCert, err := c.updater.cache.GetTlsCertificate()
+	tlsCert, err := c.updater.cache.TLSCertificate()
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +340,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 	return tlsCert, nil
 }
 
-func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation string) error {
+func (c *Client) downloadCertificateFromLocation(cache *FileCache, certLocation string) error {
 	if certLocation == "" {
 		return fmt.Errorf("certificate Location is empty")
 	}
@@ -364,7 +359,7 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 		return fmt.Errorf("certificate request: expected status 200, got %d", certReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetCertificatePath(), os.O_WRONLY|os.O_CREATE, 0700)
+	dstWriter, err := os.OpenFile(cache.CertificatePath(), os.O_WRONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -378,7 +373,7 @@ func (c *Client) downloadCertificateFromLocation(cache *Cache, certLocation stri
 	return nil
 }
 
-func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string) error {
+func (c *Client) downloadPrivateKeyFromLocation(cache *FileCache, keyLocation string) error {
 	if keyLocation == "" {
 		return fmt.Errorf("key Location is empty")
 	}
@@ -398,7 +393,7 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *Cache, keyLocation string
 		return fmt.Errorf("private key request: expected status 200, got %d", keyReq.StatusCode)
 	}
 
-	dstWriter, err := os.OpenFile(cache.GetPrivateKeyPath(), os.O_WRONLY|os.O_CREATE, 0700)
+	dstWriter, err := os.OpenFile(cache.PrivateKeyPath(), os.O_WRONLY|os.O_CREATE, 0700)
 	if err != nil {
 		return err
 	}
@@ -446,7 +441,7 @@ func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
 			return "", "", fmt.Errorf("missing %s header", challengeLocationHeader)
 		}
 
-		token, err := ioutil.ReadAll(resp.Body)
+		token, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "", "", err
 		}
@@ -469,7 +464,7 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/.well-known/certmaker-challenge/token.txt", func(rw http.ResponseWriter, r *http.Request) { rw.Write(token) })
+	mux.HandleFunc(wellKnownPath, func(w http.ResponseWriter, r *http.Request) { w.Write(token) })
 	server := http.Server{
 		Handler:           mux,
 		Addr:              fmt.Sprintf(":%d", challengePort),
@@ -507,7 +502,7 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	return certLoc, pkLoc, nil
 }
 
-func (c *Client) DownloadRootCertificate(cache *Cache) error {
+func (c *Client) DownloadRootCertificate(cache *FileCache) error {
 	req, err := http.NewRequest(http.MethodGet, c.baseUrl+downloadRootCertificatePath, nil)
 	if err != nil {
 		return err
@@ -529,7 +524,7 @@ func (c *Client) DownloadRootCertificate(cache *Cache) error {
 		return fmt.Errorf("expected Content-Type %s, git %s", pemContentType, resp.Header.Get("Content-Type"))
 	}
 
-	fh, err := os.OpenFile(cache.GetRootCertificatePath(), os.O_CREATE|os.O_WRONLY, 0744)
+	fh, err := os.OpenFile(cache.RootCertificatePath(), os.O_CREATE|os.O_WRONLY, 0744)
 	if err != nil {
 		return err
 	}

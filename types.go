@@ -31,12 +31,16 @@ type SimpleRequestSubject struct {
 
 // updater contains data relevant to automatic certificate updating
 type updater struct {
-	cache         *Cache
+	cache         *FileCache
 	simpleRequest *SimpleRequest
 	csr           *x509.CertificateRequest
 }
 
-// ClientSettings represent meta data useful for altering the behaviour of a *Client
+// ClientSettings represent meta data useful for altering the behaviour of a *Client.
+// If StrictMode is set to true, the client will check for certificate revocation via OCSP.
+// The default value is false.
+// ChallengePort is the port used for HTTP-01 challenges. The default value is 80. You have to ensure
+// that your application is able to bind to that port, otherwise HTTP-01 challenges will fail.
 type ClientSettings struct {
 	Transport     *http.Transport
 	ClientTimeout time.Duration

@@ -38,14 +38,14 @@ func TestCache_GetCertificatePath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Cache{
+			c := &FileCache{
 				PrivateKeyFilename:  tt.fields.PrivateKeyFilename,
 				CertificateFilename: tt.fields.CertificateFilename,
 			}
 			if err := c.SetDir(tt.fields.CacheDir); err != nil {
 				t.Fatalf("expected no error; got %s", err.Error())
 			}
-			if got := c.GetCertificatePath(); got != tt.want {
+			if got := c.CertificatePath(); got != tt.want {
 				t.Errorf("GetCertificatePath() = %v, want %v", got, tt.want)
 			}
 		})

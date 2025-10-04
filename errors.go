@@ -1,7 +1,5 @@
 package certmaker
 
-type ErrStillValid struct{}
+import "errors"
 
-func (e ErrStillValid) Error() string {
-	return "The certificate is still valid"
-}
+var ErrStillValid = errors.New("The certificate is still valid")

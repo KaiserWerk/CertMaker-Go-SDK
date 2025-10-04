@@ -19,7 +19,7 @@ func TestClient_DownloadRootCertificate(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 	}
 	tests := []struct {
 		name    string
@@ -99,7 +99,7 @@ func TestClient_Request(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 		cr    *SimpleRequest
 	}
 	tests := []struct {
@@ -137,7 +137,7 @@ func TestClient_RequestForDomains(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache  *Cache
+		cache  *FileCache
 		domain []string
 		days   int
 	}
@@ -176,7 +176,7 @@ func TestClient_RequestForEmails(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache  *Cache
+		cache  *FileCache
 		emails []string
 		days   int
 	}
@@ -215,7 +215,7 @@ func TestClient_RequestForIps(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 		ips   []string
 		days  int
 	}
@@ -254,7 +254,7 @@ func TestClient_RequestWithCSR(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 		csr   *x509.CertificateRequest
 	}
 	tests := []struct {
@@ -282,43 +282,6 @@ func TestClient_RequestWithCSR(t *testing.T) {
 	}
 }
 
-func TestClient_SetProxy(t *testing.T) {
-	type fields struct {
-		httpClient    *http.Client
-		baseUrl       string
-		token         string
-		strictMode    bool
-		challengePort uint16
-		updater       *updater
-	}
-	type args struct {
-		addr string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
-				httpClient:    tt.fields.httpClient,
-				baseUrl:       tt.fields.baseUrl,
-				token:         tt.fields.token,
-				strictMode:    tt.fields.strictMode,
-				challengePort: tt.fields.challengePort,
-				updater:       tt.fields.updater,
-			}
-			if err := c.SetProxy(tt.args.addr); (err != nil) != tt.wantErr {
-				t.Errorf("SetProxy() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestClient_SetupWithCSR(t *testing.T) {
 	type fields struct {
 		httpClient    *http.Client
@@ -329,7 +292,7 @@ func TestClient_SetupWithCSR(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 		csr   *x509.CertificateRequest
 	}
 	tests := []struct {
@@ -349,6 +312,8 @@ func TestClient_SetupWithCSR(t *testing.T) {
 				challengePort: tt.fields.challengePort,
 				updater:       tt.fields.updater,
 			}
+			c.SetupWithCSR(tt.args.cache, tt.args.csr)
+			// TODO
 		})
 	}
 }
@@ -363,7 +328,7 @@ func TestClient_SetupWithSimpleRequest(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache *Cache
+		cache *FileCache
 		sr    *SimpleRequest
 	}
 	tests := []struct {
@@ -383,6 +348,8 @@ func TestClient_SetupWithSimpleRequest(t *testing.T) {
 				challengePort: tt.fields.challengePort,
 				updater:       tt.fields.updater,
 			}
+			c.SetupWithSimpleRequest(tt.args.cache, tt.args.sr)
+			// TODO:
 		})
 	}
 }
@@ -397,7 +364,7 @@ func TestClient_downloadCertificateFromLocation(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache        *Cache
+		cache        *FileCache
 		certLocation string
 	}
 	tests := []struct {
@@ -435,7 +402,7 @@ func TestClient_downloadPrivateKeyFromLocation(t *testing.T) {
 		updater       *updater
 	}
 	type args struct {
-		cache       *Cache
+		cache       *FileCache
 		keyLocation string
 	}
 	tests := []struct {
