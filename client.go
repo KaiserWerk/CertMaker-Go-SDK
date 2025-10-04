@@ -35,7 +35,7 @@ const (
 	pemContentType = "application/x-pem-file"
 
 	minCertValidityHours = 12
-	clientDefaultTimeout = 5 * time.Second
+	clientDefaultTimeout = 60 * time.Second
 )
 
 // Client represents the structure required to obtain certificates (and private keys) from a remote location.
@@ -49,6 +49,7 @@ type Client struct {
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values.
+// A *Client is used to perform HTTP requests to a CertMaker instance.
 // Optionally, you can pass a *ClientSettings struct to alter the behaviour of the client.
 // If settings is nil, the client will use default values.
 func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
