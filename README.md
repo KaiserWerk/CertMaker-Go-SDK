@@ -9,11 +9,13 @@ convenience methods but also some lower level methods for more fine-tuned contro
 
 ## Installation
 
-
+```bash
+go get github.com/KaiserWerk/CertMaker-Go-SDK
+```
 
 ## Usage
 
-There are two important structs you should understand before diving into development, the *Client* and the *Cache*:
+There are two important structs you should understand before diving into development, the *Client* and the *FileCache*:
 
 ```golang
 type Client struct {
@@ -22,12 +24,12 @@ type Client struct {
 ```
 
 The ``Client``'s purpose is to request and download certificates (and private keys, if any). That's why you can supply
-an API Key and a base URL to the ``NewClient()`` function. The ``Client`` requires a valid ``Cache`` to work
+an API Key and a base URL to the ``NewClient()`` function. The ``Client`` requires a valid ``FileCache`` to work
 properly.
 
 
 ```golang
-type Cache struct {
+type FileCache struct {
     CacheDir                string
     PrivateKeyFilename      string
     CertificateFilename     string
@@ -35,14 +37,14 @@ type Cache struct {
 }
 ```
 
-Unlike the ``Client``, the ``Cache`` only has exported fields which can be manipulated by you, the developer.
-There is also a ``NewCache()`` function, which sets up a ``Cache`` with useful defaults. The ``Cache`` is required
+Unlike the ``Client``, the ``FileCache`` only has exported fields which can be manipulated.
+There is also a ``NewCache()`` function, which sets up a ``FileCache`` with useful defaults. The ``FileCache`` is required
 to interact with the filesystem. *CacheDir* is the directory (without filename) where the certificate/private key reside, 
 ``PrivateKeyFilename`` contains just the private key file name, ``CertificateFilename`` contains just the
 certificate file name.
 
 
-There are two methods to obtain the complete certificate/private key paths:
+There are two methods to obtain the full (and absolute) certificate/private key paths:
 ```golang
 certPath := cache.GetCertificatePath() // e.g. /opt/app-certs/localhost/cert.pem
 keyPath := cache.GetPrivateKeyPath() // e.g. /opt/app-certs/localhost/key.pem
@@ -78,6 +80,10 @@ client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSetting
 })
 ```
 
+### More example
+
+Please refer to the `examples` directory.
+
 ## The DNS name/IP address verification challenge
 
 If the challenge is enabled on the server side, a token has to be reachable via every DNS name or IP
@@ -95,21 +101,21 @@ requested.
 
 ## Convenience methods
 
-``RequestForDomains(cache *Cache, domains []string, days int) error`` tries to obtain a 
+``RequestForDomains(cache *FileCache, domains []string, days int) error`` tries to obtain a 
 certificate and private key with a validity of ``days`` for every DNS name in ``domains`` and writes the 
 downloaded data into ``cache``.
 
-``RequestForIps(cache *Cache, ips []string, days int) error`` tries to obtain a
+``RequestForIps(cache *FileCache, ips []string, days int) error`` tries to obtain a
 certificate and private key for with a validity of ``days`` every IP address in ``ips`` and writes the
 downloaded data into ``cache``.
 
-``RequestForEmails(cache *Cache, emails []string, days int) error`` tries to obtain a
+``RequestForEmails(cache *FileCache, emails []string, days int) error`` tries to obtain a
 certificate and private key for with a validity of ``days`` every email address in ``emails`` and writes the
 downloaded data into ``cache``.
 
 ## Lower-level methods
 
-``Request(cache *Cache, cr *SimpleRequest) error`` requires a ``SimpleRequest`` to obtain
+``Request(cache *FileCache, cr *SimpleRequest) error`` requires a ``SimpleRequest`` to obtain
 a certificate and private key into ``cache``. This method allows for more fine-grained control.
 
 Example:
@@ -131,7 +137,7 @@ err = client.Request(cache, &certmaker.SimpleRequest{
 })
 ```
 
-``RequestWithCSR(cache *Cache, csr *x509.CertificateRequest) error`` takes a *Certificate Signing Request*
+``RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) error`` takes a *Certificate Signing Request*
 and tries to obtain a certificate (no private key) as requested and writes the
 downloaded data into ``cache``.
 
@@ -145,8 +151,8 @@ err = client.RequestWithCSR(cache, csr)
 
 ## Special utility methods
 
-``SetupWithSimpleRequest(cache *Cache, sr *SimpleRequest)`` and 
-``SetupWithCSR(cache *Cache, csr *x509.CertificateRequest)`` are preparing calls to make 
+``SetupWithSimpleRequest(cache *FileCache, sr *SimpleRequest)`` and 
+``SetupWithCSR(cache *FileCache, csr *x509.CertificateRequest)`` are preparing calls to make 
 before using ``GetCertificateFunc``.
 
 ``GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)`` can be used by anything 
