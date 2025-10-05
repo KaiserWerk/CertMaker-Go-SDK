@@ -132,9 +132,9 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 	return nil
 }
 
-// RequestForIps is a convenience method to fetch a certificate and a private
+// RequestForIPs is a convenience method to fetch a certificate and a private
 // key for just the selected IP address(es) without a care about other settings.
-func (c *Client) RequestForIps(cache *FileCache, ips []string, days int) error {
+func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 	_ = os.Mkdir(cache.CacheDir, 0755)
 
 	err := cache.Valid(c)
@@ -287,20 +287,46 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 	return nil
 }
 
-// RequestRepeatedly is like Request, but runs repeatedly with the supplied interval until you tell it to stop. This is
-// useful for servers that run for weeks or months without interruption.
-// Since this is a blocking method, please call it as a goroutine.
-func (c *Client) RequestRepeatedly(cache *FileCache, cr *SimpleRequest, interval time.Duration, stopChan chan bool) error {
-	return nil
+// RequestRepeatedly is like Request, but runs repeatedly with the supplied interval until you tell it to stop.
+// This is a blocking method, call it as a goroutine.
+func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *SimpleRequest, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.Request(cache, cr); err != nil {
+				fmt.Println("RequestRepeatedly: error requesting certificate:", err)
+			}
+		}
+	}
 }
 
-// RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval
-// until you tell it to stop. This is useful for servers that run for weeks or months without interruption.
-// Since this is a blocking method, please call it as a goroutine.
-func (c *Client) RequestRepeatedlyWithCSR(cache *FileCache, csr x509.CertificateRequest, interval time.Duration, stopChan chan bool) error {
-	return nil
+// RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval until you tell it to stop.
+// This is a blocking method, call it as a goroutine.
+func (c *Client) RequestRepeatedlyWithCSR(ctx context.Context, cache *FileCache, csr *x509.CertificateRequest, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.RequestWithCSR(cache, csr); err != nil {
+				fmt.Println("RequestRepeatedlyWithCSR: error requesting certificate:", err)
+			}
+		}
+	}
 }
 
+// GetCertificateFunc returns a function suitable for use as tls.Config.GetCertificate.
+// It will automatically request a new certificate if the existing one is not valid anymore.
+// You must call either SetupWithSimpleRequest or SetupWithCSR before calling this method,
+// otherwise it will return an error.
 func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if c == nil {
 		return nil, fmt.Errorf("client is nil")
@@ -503,6 +529,9 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	return certLoc, pkLoc, nil
 }
 
+// DownloadRootCertificate downloads the root certificate from the CertMaker instance
+// and stores it in the location specified by cache.RootCertificatePath().
+// If there is already a file at that location, it will be overwritten.
 func (c *Client) DownloadRootCertificate(cache *FileCache) error {
 	req, err := http.NewRequest(http.MethodGet, c.baseUrl+downloadRootCertificatePath, nil)
 	if err != nil {

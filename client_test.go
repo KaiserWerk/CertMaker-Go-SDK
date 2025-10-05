@@ -237,7 +237,7 @@ func TestClient_RequestForIps(t *testing.T) {
 				challengePort: tt.fields.challengePort,
 				updater:       tt.fields.updater,
 			}
-			if err := c.RequestForIps(tt.args.cache, tt.args.ips, tt.args.days); (err != nil) != tt.wantErr {
+			if err := c.RequestForIPs(tt.args.cache, tt.args.ips, tt.args.days); (err != nil) != tt.wantErr {
 				t.Errorf("RequestForIps() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
