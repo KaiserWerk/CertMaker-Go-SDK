@@ -79,18 +79,18 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 }
 
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithSimpleRequest(cache *FileCache, sr *SimpleRequest) {
+func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error)) {
 	c.updater = &updater{
-		cache:         cache,
-		simpleRequest: sr,
+		cache:  cache,
+		srFunc: srFunc,
 	}
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache *FileCache, csr *x509.CertificateRequest) {
+func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error)) {
 	c.updater = &updater{
-		cache: cache,
-		csr:   csr,
+		cache:   cache,
+		csrFunc: csrFunc,
 	}
 }
 
@@ -115,7 +115,7 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, pkLoc, err := c.requestNewKeyPair(buf)
+	certLoc, pkLoc, err := c.requestCertificateAndPrivateKey(buf)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, pkLoc, err := c.requestNewKeyPair(buf)
+	certLoc, pkLoc, err := c.requestCertificateAndPrivateKey(buf)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, pkLoc, err := c.requestNewKeyPair(buf)
+	certLoc, pkLoc, err := c.requestCertificateAndPrivateKey(buf)
 	if err != nil {
 		return err
 	}
@@ -214,9 +214,12 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 // Request requests a fresh certificate and private key with the metadata contained in the
 // *SimpleRequest and puts it into *Cache.
 func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
-	_ = os.Mkdir(cache.CacheDir, 0755)
+	err := os.Mkdir(cache.CacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
-	err := cache.Valid(c)
+	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -227,7 +230,7 @@ func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, pkLoc, err := c.requestNewKeyPair(buf)
+	certLoc, pkLoc, err := c.requestCertificateAndPrivateKey(buf)
 	if err != nil {
 		return err
 	}
@@ -242,12 +245,12 @@ func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 
 	err = c.downloadCertificateFromLocation(cache, certLoc)
 	if err != nil {
-		return fmt.Errorf("Request: error downloading certificate from location: " + err.Error())
+		return fmt.Errorf("Request: error downloading certificate from location '%s': %w", certLoc, err)
 	}
 
 	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
 	if err != nil {
-		return fmt.Errorf("error downloading private key from location: " + err.Error())
+		return fmt.Errorf("error downloading private key from location '%s': %w", pkLoc, err)
 	}
 
 	return nil
@@ -275,7 +278,7 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, _, err := c.requestNewKeyPair(buf) // TODO adapt for CSR
+	certLoc, _, err := c.requestCertificateAndPrivateKey(buf) // TODO adapt for CSR
 	if err != nil {
 		return err
 	}
@@ -352,16 +355,26 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return c.updater.cache.TLSCertificate()
 	}
 
-	if c.updater.simpleRequest != nil {
-		err = c.Request(c.updater.cache, c.updater.simpleRequest)
-	} else if c.updater.csr != nil {
-		err = c.RequestWithCSR(c.updater.cache, c.updater.csr)
+	if c.updater.srFunc != nil {
+		sr, err := c.updater.srFunc()
+		if err != nil {
+			return nil, fmt.Errorf("error calling SimpleRequest function: %w", err)
+		}
+		err = c.Request(c.updater.cache, sr)
+		if err != nil {
+			return nil, fmt.Errorf("error requesting certificate with SimpleRequest: %w", err)
+		}
+	} else if c.updater.csrFunc != nil {
+		csr, err := c.updater.csrFunc()
+		if err != nil {
+			return nil, fmt.Errorf("error calling CSR function: %w", err)
+		}
+		err = c.RequestWithCSR(c.updater.cache, csr)
+		if err != nil {
+			return nil, fmt.Errorf("error requesting certificate with CSR: %w", err)
+		}
 	} else {
-		return nil, fmt.Errorf("both SimpleRequest and CSR were nil, that means a Setup method was not called")
-	}
-
-	if err != nil {
-		return nil, err
+		return nil, ErrMissingSetup
 	}
 
 	tlsCert, err := c.updater.cache.TLSCertificate()
@@ -370,7 +383,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 	}
 
 	if tlsCert == nil {
-		return nil, fmt.Errorf("for whatever reason the *tls.Certificate was nil")
+		return nil, fmt.Errorf("the *tls.Certificate was nil")
 	}
 
 	return tlsCert, nil
@@ -443,7 +456,9 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *FileCache, keyLocation st
 	return nil
 }
 
-func (c *Client) requestNewKeyPair(body io.Reader) (string, string, error) {
+// requestCertificateAndPrivateKey sends the actual request to the CertMaker instance and handles the response.
+// It returns the locations (URLs) to obtain the certificate and private key from.
+func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
 	if err != nil {
 		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
@@ -504,9 +519,9 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	server := http.Server{
 		Handler:           mux,
 		Addr:              fmt.Sprintf(":%d", challengePort),
-		ReadTimeout:       3 * time.Second,
-		WriteTimeout:      3 * time.Second,
-		ReadHeaderTimeout: 1 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		ReadHeaderTimeout: 20 * time.Second,
 	}
 	server.SetKeepAlivesEnabled(false)
 

@@ -462,7 +462,7 @@ func TestClient_requestNewKeyPair(t *testing.T) {
 				challengePort: tt.fields.challengePort,
 				updater:       tt.fields.updater,
 			}
-			got, got1, err := c.requestNewKeyPair(tt.args.body)
+			got, got1, err := c.requestCertificateAndPrivateKey(tt.args.body)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("requestNewKeyPair() error = %v, wantErr %v", err, tt.wantErr)
 				return
