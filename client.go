@@ -360,21 +360,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return nil, fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = c.updater.cache.Valid(c, c.updater.minValidity)
-	if err == nil {
-		return c.updater.cache.TLSCertificate()
-	}
-
-	if c.updater.srFunc != nil {
-		sr, err := c.updater.srFunc()
-		if err != nil {
-			return nil, fmt.Errorf("error calling SimpleRequest function: %w", err)
-		}
-		err = c.Request(c.updater.cache, sr)
-		if err != nil {
-			return nil, fmt.Errorf("error requesting certificate with SimpleRequest: %w", err)
-		}
-	} else if c.updater.csrFunc != nil {
+	if c.updater.csrFunc != nil && c.updater.privKeyFunc != nil {
 		if !c.updater.cache.HasPrivateKey() {
 			if c.updater.privKeyFunc != nil {
 				privKeyPath, err := c.updater.privKeyFunc()
@@ -390,6 +376,23 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 				return nil, fmt.Errorf("private key file is missing and no function to obtain it was supplied")
 			}
 		}
+	}
+
+	err = c.updater.cache.Valid(c, c.updater.minValidity)
+	if err == nil {
+		return c.updater.cache.TLSCertificate()
+	}
+
+	if c.updater.srFunc != nil {
+		sr, err := c.updater.srFunc()
+		if err != nil {
+			return nil, fmt.Errorf("error calling SimpleRequest function: %w", err)
+		}
+		err = c.Request(c.updater.cache, sr)
+		if err != nil {
+			return nil, fmt.Errorf("error requesting certificate with SimpleRequest: %w", err)
+		}
+	} else if c.updater.csrFunc != nil {
 		csr, err := c.updater.csrFunc()
 		if err != nil {
 			return nil, fmt.Errorf("error calling CSR function: %w", err)
