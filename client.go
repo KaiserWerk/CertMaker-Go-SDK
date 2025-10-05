@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -299,6 +300,10 @@ func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *Si
 			return
 		case <-ticker.C:
 			if err := c.Request(cache, cr); err != nil {
+				if errors.Is(err, ErrStillValid) {
+					fmt.Println("RequestRepeatedly: certificate still valid, not requesting a new one")
+					continue
+				}
 				fmt.Println("RequestRepeatedly: error requesting certificate:", err)
 			}
 		}
@@ -317,6 +322,10 @@ func (c *Client) RequestRepeatedlyWithCSR(ctx context.Context, cache *FileCache,
 			return
 		case <-ticker.C:
 			if err := c.RequestWithCSR(cache, csr); err != nil {
+				if errors.Is(err, ErrStillValid) {
+					fmt.Println("RequestRepeatedlyWithCSR: certificate still valid, not requesting a new one")
+					continue
+				}
 				fmt.Println("RequestRepeatedlyWithCSR: error requesting certificate:", err)
 			}
 		}
