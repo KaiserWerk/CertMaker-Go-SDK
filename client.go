@@ -275,10 +275,6 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	if !fileExists(cache.PrivateKeyPath()) {
-		return fmt.Errorf("private key file missing")
-	}
-
 	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
@@ -294,10 +290,12 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 		return fmt.Errorf("RequestWithCSR: error downloading certificate from location '%s': %s", certLoc, err.Error())
 	}
 
+	// private key is not downloaded as it must already exist beforehand
+
 	return nil
 }
 
-// RequestRepeatedly is like Request, but runs repeatedly with the supplied interval until you tell it to stop.
+// RequestRepeatedly is like Request, but runs repeatedly with the supplied interval.
 // This is a blocking method, call it as a goroutine.
 func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *SimpleRequest, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -319,7 +317,7 @@ func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *Si
 	}
 }
 
-// RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval until you tell it to stop.
+// RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval.
 // This is a blocking method, call it as a goroutine.
 func (c *Client) RequestRepeatedlyWithCSR(ctx context.Context, cache *FileCache, csr *x509.CertificateRequest, interval time.Duration) {
 	ticker := time.NewTicker(interval)
