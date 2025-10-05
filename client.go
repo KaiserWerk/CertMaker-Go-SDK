@@ -470,20 +470,20 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *FileCache, keyLocation st
 func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
 	if err != nil {
-		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
+		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: could not create new HTTP request: " + err.Error())
 	}
 
 	req.Header.Set(authenticationHeader, c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("could not execute HTTP request: " + err.Error())
+		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: could not execute HTTP request: " + err.Error())
 	}
 	defer resp.Body.Close()
 
 	var certLoc, pkLoc string
 	switch resp.StatusCode {
-	case http.StatusOK:
+	case http.StatusCreated:
 		// w/o challenge
 		certLoc = resp.Header.Get(certificateLocationHeader)
 		if certLoc == "" {
@@ -512,7 +512,7 @@ func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string
 		}
 	default:
 		// if it's neither of both, return error
-		return "", "", fmt.Errorf("expected status code 200 or 202, got %d", resp.StatusCode)
+		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: expected status code 201 or 202, got %d", resp.StatusCode)
 	}
 
 	return certLoc, pkLoc, nil
@@ -521,20 +521,20 @@ func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string
 func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificateWithCSRPath, body)
 	if err != nil {
-		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
+		return "", "", fmt.Errorf("requestCertificateForCSR: could not create new HTTP request: " + err.Error())
 	}
 
 	req.Header.Set(authenticationHeader, c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("could not execute HTTP request: " + err.Error())
+		return "", "", fmt.Errorf("requestCertificateForCSR: could not execute HTTP request: " + err.Error())
 	}
 	defer resp.Body.Close()
 
 	var certLoc, pkLoc string
 	switch resp.StatusCode {
-	case http.StatusOK:
+	case http.StatusCreated:
 		// w/o challenge
 		certLoc = resp.Header.Get(certificateLocationHeader)
 		if certLoc == "" {
@@ -563,7 +563,7 @@ func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error
 		}
 	default:
 		// if it's neither of both, return error
-		return "", "", fmt.Errorf("expected status code 200 or 202, got %d", resp.StatusCode)
+		return "", "", fmt.Errorf("requestCertificateForCSR: expected status code 201 or 202, got %d", resp.StatusCode)
 	}
 
 	return certLoc, pkLoc, nil
