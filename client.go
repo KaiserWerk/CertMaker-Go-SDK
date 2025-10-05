@@ -290,7 +290,7 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 	}
 	buf := bytes.NewBuffer(jsonCont)
 
-	certLoc, _, err := c.requestCertificateAndPrivateKey(buf) // TODO adapt for CSR
+	certLoc, _, err := c.requestCertificateForCSR(buf) // TODO: adapt for CSR
 	if err != nil {
 		return err
 	}
@@ -475,6 +475,57 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *FileCache, keyLocation st
 // It returns the locations (URLs) to obtain the certificate and private key from.
 func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
+	if err != nil {
+		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
+	}
+
+	req.Header.Set(authenticationHeader, c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("could not execute HTTP request: " + err.Error())
+	}
+	defer resp.Body.Close()
+
+	var certLoc, pkLoc string
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// w/o challenge
+		certLoc = resp.Header.Get(certificateLocationHeader)
+		if certLoc == "" {
+			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
+		}
+
+		pkLoc = resp.Header.Get(privateKeyLocationHeader)
+		if pkLoc == "" {
+			return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
+		}
+	case http.StatusAccepted:
+		// with challenge
+		loc := resp.Header.Get(challengeLocationHeader)
+		if loc == "" {
+			return "", "", fmt.Errorf("missing %s header", challengeLocationHeader)
+		}
+
+		token, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", "", err
+		}
+
+		certLoc, pkLoc, err = c.resolveSimpleRequestChallenge(loc, token, c.challengePort)
+		if err != nil {
+			return "", "", err
+		}
+	default:
+		// if it's neither of both, return error
+		return "", "", fmt.Errorf("expected status code 200 or 202, got %d", resp.StatusCode)
+	}
+
+	return certLoc, pkLoc, nil
+}
+
+func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error) {
+	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificateWithCSRPath, body)
 	if err != nil {
 		return "", "", fmt.Errorf("could not create new HTTP request: " + err.Error())
 	}
