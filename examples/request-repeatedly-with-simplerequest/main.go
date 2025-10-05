@@ -28,6 +28,7 @@ func main() {
 
 		Days: 88,
 		Subject: certmaker.SimpleRequestSubject{
+			CommonName:    "example.com",
 			Organization:  "Example Inc.",
 			Country:       "DE",
 			Locality:      "Berlin",
