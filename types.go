@@ -21,6 +21,7 @@ type SimpleRequest struct {
 
 // SimpleRequestSubject represents the subject of a SimpleRequest
 type SimpleRequestSubject struct {
+	CommonName    string `json:"common_name"`
 	Organization  string `json:"organization"`
 	Country       string `json:"country"`
 	Province      string `json:"province"`
