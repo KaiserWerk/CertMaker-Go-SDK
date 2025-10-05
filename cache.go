@@ -195,10 +195,23 @@ func (c *FileCache) Valid(client *Client, minValidity time.Duration) error {
 			return fmt.Errorf("could not parse OCSP response: %w", err)
 		}
 		if ocspResp.Status != ocsp.Good && ocspResp.Status != ocsp.Unknown {
-			return fmt.Errorf("status is neither good nor unknown!")
+			return fmt.Errorf("status is neither good nor unknown: %d", ocspResp.Status)
 		}
 	}
 
+	return nil
+}
+
+// CopyPrivateKeyFromFile makes a copy of the private key file located at 'src' into the cache's private key file.
+func (c *FileCache) CopyPrivateKeyFromFile(src string) error {
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("CopyPrivateKeyFromFile: could not read source private key file: %w", err)
+	}
+	err = os.WriteFile(c.PrivateKeyPath(), input, 0600)
+	if err != nil {
+		return fmt.Errorf("CopyPrivateKeyFromFile: could not write private key file: %w", err)
+	}
 	return nil
 }
 
