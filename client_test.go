@@ -282,77 +282,77 @@ func TestClient_RequestWithCSR(t *testing.T) {
 	}
 }
 
-func TestClient_SetupWithCSR(t *testing.T) {
-	type fields struct {
-		httpClient    *http.Client
-		baseUrl       string
-		token         string
-		strictMode    bool
-		challengePort uint16
-		updater       *updater
-	}
-	type args struct {
-		cache *FileCache
-		csr   *x509.CertificateRequest
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
-				httpClient:    tt.fields.httpClient,
-				baseUrl:       tt.fields.baseUrl,
-				token:         tt.fields.token,
-				strictMode:    tt.fields.strictMode,
-				challengePort: tt.fields.challengePort,
-				updater:       tt.fields.updater,
-			}
-			c.SetupWithCSR(tt.args.cache, tt.args.csr)
-			// TODO
-		})
-	}
-}
+// func TestClient_SetupWithCSR(t *testing.T) {
+// 	type fields struct {
+// 		httpClient    *http.Client
+// 		baseUrl       string
+// 		token         string
+// 		strictMode    bool
+// 		challengePort uint16
+// 		updater       *updater
+// 	}
+// 	type args struct {
+// 		cache *FileCache
+// 		csr   *x509.CertificateRequest
+// 	}
+// 	tests := []struct {
+// 		name   string
+// 		fields fields
+// 		args   args
+// 	}{
+// 		// TODO: Add test cases.
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			c := &Client{
+// 				httpClient:    tt.fields.httpClient,
+// 				baseUrl:       tt.fields.baseUrl,
+// 				token:         tt.fields.token,
+// 				strictMode:    tt.fields.strictMode,
+// 				challengePort: tt.fields.challengePort,
+// 				updater:       tt.fields.updater,
+// 			}
+// 			c.SetupWithCSR(tt.args.cache, tt.args.csr)
+// 			// TODO
+// 		})
+// 	}
+// }
 
-func TestClient_SetupWithSimpleRequest(t *testing.T) {
-	type fields struct {
-		httpClient    *http.Client
-		baseUrl       string
-		token         string
-		strictMode    bool
-		challengePort uint16
-		updater       *updater
-	}
-	type args struct {
-		cache *FileCache
-		sr    *SimpleRequest
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
-				httpClient:    tt.fields.httpClient,
-				baseUrl:       tt.fields.baseUrl,
-				token:         tt.fields.token,
-				strictMode:    tt.fields.strictMode,
-				challengePort: tt.fields.challengePort,
-				updater:       tt.fields.updater,
-			}
-			c.SetupWithSimpleRequest(tt.args.cache, tt.args.sr)
-			// TODO:
-		})
-	}
-}
+// func TestClient_SetupWithSimpleRequest(t *testing.T) {
+// 	type fields struct {
+// 		httpClient    *http.Client
+// 		baseUrl       string
+// 		token         string
+// 		strictMode    bool
+// 		challengePort uint16
+// 		updater       *updater
+// 	}
+// 	type args struct {
+// 		cache *FileCache
+// 		sr    *SimpleRequest
+// 	}
+// 	tests := []struct {
+// 		name   string
+// 		fields fields
+// 		args   args
+// 	}{
+// 		// TODO: Add test cases.
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			c := &Client{
+// 				httpClient:    tt.fields.httpClient,
+// 				baseUrl:       tt.fields.baseUrl,
+// 				token:         tt.fields.token,
+// 				strictMode:    tt.fields.strictMode,
+// 				challengePort: tt.fields.challengePort,
+// 				updater:       tt.fields.updater,
+// 			}
+// 			c.SetupWithSimpleRequest(tt.args.cache, tt.args.sr)
+// 			// TODO:
+// 		})
+// 	}
+// }
 
 func TestClient_downloadCertificateFromLocation(t *testing.T) {
 	type fields struct {
@@ -511,7 +511,7 @@ func TestClient_resolveSimpleRequestChallenge(t *testing.T) {
 				challengePort: tt.fields.challengePort,
 				updater:       tt.fields.updater,
 			}
-			got, got1, err := c.resolveSimpleRequestChallenge(tt.args.locationUrl, tt.args.token, tt.args.challengePort)
+			got, got1, err := c.resolveHTTPChallenge(tt.args.locationUrl, tt.args.token, tt.args.challengePort)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("resolveSimpleRequestChallenge() error = %v, wantErr %v", err, tt.wantErr)
 				return

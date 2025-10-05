@@ -506,7 +506,7 @@ func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string
 			return "", "", err
 		}
 
-		certLoc, pkLoc, err = c.resolveSimpleRequestChallenge(loc, token, c.challengePort)
+		certLoc, pkLoc, err = c.resolveHTTPChallenge(loc, token, c.challengePort)
 		if err != nil {
 			return "", "", err
 		}
@@ -532,18 +532,13 @@ func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error
 	}
 	defer resp.Body.Close()
 
-	var certLoc, pkLoc string
+	var certLoc string
 	switch resp.StatusCode {
 	case http.StatusCreated:
 		// w/o challenge
 		certLoc = resp.Header.Get(certificateLocationHeader)
 		if certLoc == "" {
 			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
-		}
-
-		pkLoc = resp.Header.Get(privateKeyLocationHeader)
-		if pkLoc == "" {
-			return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
 		}
 	case http.StatusAccepted:
 		// with challenge
@@ -557,7 +552,7 @@ func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error
 			return "", "", err
 		}
 
-		certLoc, pkLoc, err = c.resolveSimpleRequestChallenge(loc, token, c.challengePort)
+		certLoc, _, err = c.resolveHTTPChallenge(loc, token, c.challengePort)
 		if err != nil {
 			return "", "", err
 		}
@@ -566,10 +561,10 @@ func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error
 		return "", "", fmt.Errorf("requestCertificateForCSR: expected status code 201 or 202, got %d", resp.StatusCode)
 	}
 
-	return certLoc, pkLoc, nil
+	return certLoc, "", nil
 }
 
-func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte, challengePort uint16) (string, string, error) {
+func (c *Client) resolveHTTPChallenge(resolveURL string, token []byte, challengePort uint16) (string, string, error) {
 	if challengePort == 0 {
 		challengePort = 80
 	}
@@ -586,9 +581,9 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 	server.SetKeepAlivesEnabled(false)
 
 	go server.ListenAndServe()
-	defer server.Shutdown(context.Background())
+	defer server.Shutdown(context.Background()) // TODO: supply proper context with deadline
 
-	req, err := http.NewRequest(http.MethodGet, locationUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, resolveURL, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -605,10 +600,8 @@ func (c *Client) resolveSimpleRequestChallenge(locationUrl string, token []byte,
 		return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
 	}
 
+	// pkLoc might be empty for requests with CSR
 	pkLoc := resp.Header.Get(privateKeyLocationHeader)
-	if pkLoc == "" {
-		return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
-	}
 
 	return certLoc, pkLoc, nil
 }
