@@ -134,7 +134,7 @@ func (c *FileCache) RootCertificate() (*x509.Certificate, error) {
 // If strictmode is enabled, *Client additionally checks whether the certificate is revoked via OCSP request.
 //
 // If any of the checks fail, an error is returned.
-func (c *FileCache) Valid(client *Client) error {
+func (c *FileCache) Valid(client *Client, minValidity time.Duration) error {
 	if !fileExists(c.CertificatePath()) {
 		return fmt.Errorf("certificate file missing")
 	}
@@ -151,7 +151,7 @@ func (c *FileCache) Valid(client *Client) error {
 	}
 
 	diff := time.Until(cert.NotAfter)
-	if diff.Hours() < minCertValidityHours {
+	if diff < minValidity {
 		return fmt.Errorf("certificate is about to expire")
 	}
 

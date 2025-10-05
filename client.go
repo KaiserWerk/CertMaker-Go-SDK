@@ -35,8 +35,8 @@ const (
 
 	pemContentType = "application/x-pem-file"
 
-	minCertValidityHours = 12
-	clientDefaultTimeout = 60 * time.Second
+	defaultMinimumValidity = 72 * time.Hour
+	clientDefaultTimeout   = 60 * time.Second
 )
 
 // Client represents the structure required to obtain certificates (and private keys) from a remote location.
@@ -79,18 +79,20 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 }
 
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error)) {
+func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error), minValidity time.Duration) {
 	c.updater = &updater{
-		cache:  cache,
-		srFunc: srFunc,
+		cache:       cache,
+		srFunc:      srFunc,
+		minValidity: minValidity,
 	}
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error)) {
+func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error), minValidity time.Duration) {
 	c.updater = &updater{
-		cache:   cache,
-		csrFunc: csrFunc,
+		cache:       cache,
+		csrFunc:     csrFunc,
+		minValidity: minValidity,
 	}
 }
 
@@ -102,7 +104,7 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = cache.Valid(c)
+	err = cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -144,7 +146,7 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = cache.Valid(c)
+	err = cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -186,7 +188,7 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = cache.Valid(c)
+	err = cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -228,7 +230,7 @@ func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = cache.Valid(c)
+	err = cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -275,7 +277,7 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = cache.Valid(c)
+	err = cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -357,7 +359,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return nil, fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
 
-	err = c.updater.cache.Valid(c)
+	err = c.updater.cache.Valid(c, c.updater.minValidity)
 	if err == nil {
 		return c.updater.cache.TLSCertificate()
 	}

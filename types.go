@@ -32,9 +32,10 @@ type SimpleRequestSubject struct {
 
 // updater contains data relevant to automatic certificate updating
 type updater struct {
-	cache   *FileCache
-	srFunc  func() (*SimpleRequest, error)
-	csrFunc func() (*x509.CertificateRequest, error)
+	cache       *FileCache
+	minValidity time.Duration
+	srFunc      func() (*SimpleRequest, error)
+	csrFunc     func() (*x509.CertificateRequest, error)
 }
 
 // ClientSettings represent meta data useful for altering the behaviour of a *Client.
