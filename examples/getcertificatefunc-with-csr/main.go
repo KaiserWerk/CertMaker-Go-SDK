@@ -16,7 +16,7 @@ import (
 
 func main() {
 	certMakerInstance := "http://localhost:8880"
-	token := "c2c56c2dfd076045b0bf356f7ce600c2039e9131bf7043397bdf1e242c0d638d697459c83e127b6b"
+	token := "<token>"
 
 	cache, _ := certmaker.NewCache()
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{

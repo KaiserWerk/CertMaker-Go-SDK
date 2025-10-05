@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
-	"crypto/tls"
-	"net/http"
-	"os"
-	"os/signal"
+	"fmt"
+	"log"
 	"time"
 
 	certmaker "github.com/KaiserWerk/CertMaker-Go-SDK"
@@ -20,15 +17,12 @@ func main() {
 		ClientTimeout: 10 * time.Minute,
 	})
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
 	sr := &certmaker.SimpleRequest{
 		Domains:        []string{"example.com", "www.example.com"},
 		EmailAddresses: []string{"user@example.com"},
 		IPs:            []string{"127.0.0.1"},
 
-		Days: 1,
+		Days: 100,
 		Subject: certmaker.SimpleRequestSubject{
 			Organization:  "Example Inc.",
 			Country:       "DE",
@@ -39,20 +33,10 @@ func main() {
 		},
 	}
 
-	client.SetupWithSimpleRequest(cache, func() (*certmaker.SimpleRequest, error) { return sr, nil }, 23*time.Hour)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
-	})
-	server := &http.Server{
-		Addr:    ":25000",
-		Handler: mux,
-		TLSConfig: &tls.Config{
-			GetCertificate: client.GetCertificateFunc,
-		},
+	err := client.Request(cache, sr)
+	if err != nil {
+		log.Fatalf("Could not request certificate: %v", err)
 	}
-	go server.ListenAndServeTLS("", "")
 
-	<-ctx.Done()
+	fmt.Println("Certificate requested successfully")
 }
