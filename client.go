@@ -284,13 +284,7 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 		return ErrStillValid
 	}
 
-	jsonCont, err := json.Marshal(csr)
-	if err != nil {
-		return err
-	}
-	buf := bytes.NewBuffer(jsonCont)
-
-	certLoc, _, err := c.requestCertificateForCSR(buf) // TODO: adapt for CSR
+	certLoc, _, err := c.requestCertificateForCSR(bytes.NewBuffer(csr.Raw)) // TODO: adapt for CSR
 	if err != nil {
 		return err
 	}
