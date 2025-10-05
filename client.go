@@ -97,9 +97,12 @@ func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.Certificat
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) without a care about other settings.
 func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int) error {
-	_ = os.Mkdir(cache.CacheDir, 0755)
+	err := os.MkdirAll(cache.CacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
-	err := cache.Valid(c)
+	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -136,9 +139,12 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 // RequestForIPs is a convenience method to fetch a certificate and a private
 // key for just the selected IP address(es) without a care about other settings.
 func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
-	_ = os.Mkdir(cache.CacheDir, 0755)
+	err := os.MkdirAll(cache.CacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
-	err := cache.Valid(c)
+	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -175,9 +181,12 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 // RequestForEmails is a convenience method to fetch a certificate and a private
 // key for just the selected email address(es) without a care about other settings.
 func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) error {
-	_ = os.Mkdir(cache.CacheDir, 0755)
+	err := os.MkdirAll(cache.CacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
-	err := cache.Valid(c)
+	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -214,7 +223,7 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 // Request requests a fresh certificate and private key with the metadata contained in the
 // *SimpleRequest and puts it into *Cache.
 func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
-	err := os.Mkdir(cache.CacheDir, 0755)
+	err := os.MkdirAll(cache.CacheDir, 0755)
 	if err != nil {
 		return fmt.Errorf("error creating cache directory: %s", err.Error())
 	}
@@ -261,13 +270,16 @@ func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 // The *Cache must have the PrivateKeyFilename field set to a file containing a valid private key. Otherwise
 // the process will fail.
 func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) error {
-	_ = os.Mkdir(cache.CacheDir, 0755)
+	err := os.MkdirAll(cache.CacheDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
 	if !fileExists(cache.PrivateKeyPath()) {
 		return fmt.Errorf("private key file missing")
 	}
 
-	err := cache.Valid(c)
+	err = cache.Valid(c)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -348,9 +360,12 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return nil, fmt.Errorf("updater or cache are nil")
 	}
 
-	_ = os.Mkdir(c.updater.cache.CacheDir, 0755)
+	err := os.MkdirAll(c.updater.cache.CacheDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("error creating cache directory: %s", err.Error())
+	}
 
-	err := c.updater.cache.Valid(c)
+	err = c.updater.cache.Valid(c)
 	if err == nil {
 		return c.updater.cache.TLSCertificate()
 	}
