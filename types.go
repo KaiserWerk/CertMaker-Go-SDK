@@ -36,6 +36,7 @@ type updater struct {
 	minValidity time.Duration
 	srFunc      func() (*SimpleRequest, error)
 	csrFunc     func() (*x509.CertificateRequest, error)
+	privKeyFunc func() (string, error)
 }
 
 // ClientSettings represent meta data useful for altering the behaviour of a *Client.

@@ -105,7 +105,7 @@ func (c *FileCache) TLSCertificate() (*tls.Certificate, error) {
 
 // RootCertificate loads and returns the root certificate from the Cache's root certificate file.
 func (c *FileCache) RootCertificate() (*x509.Certificate, error) {
-	if !c.hasRootCertificate() {
+	if !c.HasRootCertificate() {
 		return nil, fmt.Errorf("root certificate file does not exist")
 	}
 
@@ -157,7 +157,7 @@ func (c *FileCache) Valid(client *Client, minValidity time.Duration) error {
 
 	if client.strictMode {
 		fmt.Println("strict mode enabled; checking revocation status...")
-		if !c.hasRootCertificate() {
+		if !c.HasRootCertificate() {
 			err = client.DownloadRootCertificate(c)
 			if err != nil {
 				return fmt.Errorf("could not download root cert: %w", err)
@@ -215,6 +215,10 @@ func (c *FileCache) CopyPrivateKeyFromFile(src string) error {
 	return nil
 }
 
-func (c *FileCache) hasRootCertificate() bool {
+func (c *FileCache) HasRootCertificate() bool {
 	return fileExists(c.RootCertificatePath())
+}
+
+func (c *FileCache) HasPrivateKey() bool {
+	return fileExists(c.PrivateKeyPath())
 }

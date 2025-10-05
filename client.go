@@ -88,10 +88,11 @@ func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*Simple
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error), minValidity time.Duration) {
+func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error), privKeyFunc func() (string, error), minValidity time.Duration) {
 	c.updater = &updater{
 		cache:       cache,
 		csrFunc:     csrFunc,
+		privKeyFunc: privKeyFunc,
 		minValidity: minValidity,
 	}
 }
@@ -374,6 +375,21 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 			return nil, fmt.Errorf("error requesting certificate with SimpleRequest: %w", err)
 		}
 	} else if c.updater.csrFunc != nil {
+		if !c.updater.cache.HasPrivateKey() {
+			if c.updater.privKeyFunc != nil {
+				privKeyPath, err := c.updater.privKeyFunc()
+				if err != nil {
+					return nil, fmt.Errorf("error calling private key function: %w", err)
+				}
+
+				err = c.updater.cache.CopyPrivateKeyFromFile(privKeyPath)
+				if err != nil {
+					return nil, fmt.Errorf("error copying private key from file: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("private key file is missing and no function to obtain it was supplied")
+			}
+		}
 		csr, err := c.updater.csrFunc()
 		if err != nil {
 			return nil, fmt.Errorf("error calling CSR function: %w", err)
