@@ -80,24 +80,23 @@ client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSetting
 })
 ```
 
-### More example
+### More examples
 
 Please refer to the `examples` directory.
 
-## The DNS name/IP address verification challenge
+## The HTTP-01 challenge
 
+CertMaker uses a slightly simplified version of the HTTP-01 challenge.
 If the challenge is enabled on the server side, a token has to be reachable via every DNS name or IP
-address. This means that at least one port must be open to be used for the solving part. You can supply
-it using the ``certmaker.ClientSettings{}``.
+address. This means that at least one port must be open to be used for the solving part. You can supply it using the ``certmaker.ClientSettings{}``.
 Email addresses have no relevance in the verification challenge.
 
 ## Request types
 
-There are two types of certificate requests. One is the ``SimpleRequest``, the other is the
-``*x509.CertificateRequest``.
-A ``SimpleRequest`` requests a private key with the corresponding certificate. A 
-``*x509.CertificateRequest`` is created from an existing private key, so just a certificate is
-requested.
+There are two types of certificate requests. 
+
+1. A ``SimpleRequest`` requests a private key with the corresponding certificate with the supplied request information.
+2. A ``*x509.CertificateRequest`` is created from an existing private key, so just a certificate is requested. This is the default that is used by most certificate authorities.
 
 ## Convenience methods
 
@@ -105,7 +104,7 @@ requested.
 certificate and private key with a validity of ``days`` for every DNS name in ``domains`` and writes the 
 downloaded data into ``cache``.
 
-``RequestForIps(cache *FileCache, ips []string, days int) error`` tries to obtain a
+``RequestForIPs(cache *FileCache, ips []string, days int) error`` tries to obtain a
 certificate and private key for with a validity of ``days`` every IP address in ``ips`` and writes the
 downloaded data into ``cache``.
 
@@ -120,12 +119,14 @@ a certificate and private key into ``cache``. This method allows for more fine-g
 
 Example:
 ```golang
-// Just omitwhat is not needed, e.g. the email addresses
+// Just omit what is not needed, e.g. the email addresses
 err = client.Request(cache, &certmaker.SimpleRequest{
-    Domains:        []string{"localhost"},
+    Domains:        []string{"localhost", "myhost.com"},
     IPs:            []string{"127.0.0.1", "::1"},
-    EmailAddresses: []string{"some@mail.org", "other@mail.com"}
+    EmailAddresses: []string{"some@myhost.org", "other@myhost.com"}
+    Days: 25, // the desired validity in days
     Subject: certmaker.SimpleRequestSubject{
+        CommonName:    "myhost.com",
         Organization:  "KAISERWERK Ltd.",
         Country:       "Germany",
         Province:      "NRW",
@@ -133,7 +134,6 @@ err = client.Request(cache, &certmaker.SimpleRequest{
         StreetAddress: "Random Street 1337",
         PostalCode:    "12345",
     },
-    Days: 25,
 })
 ```
 
@@ -144,19 +144,19 @@ downloaded data into ``cache``.
 Example:
 ```golang
 var data []byte // from file or HTTP request or byte buffer or...
-b, _ := pem.Decode(data)
+b, _ := pem.Decode(data) // this step might not be necessary, depending on data
 csr, _ := x509.ParseCertificateRequest(b.Bytes)
 err = client.RequestWithCSR(cache, csr)
 ```
 
 ## Special utility methods
 
-``SetupWithSimpleRequest(cache *FileCache, sr *SimpleRequest)`` and 
-``SetupWithCSR(cache *FileCache, csr *x509.CertificateRequest)`` are preparing calls to make 
-before using ``GetCertificateFunc``.
+``SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error))`` and 
+``SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error))`` are preparatory calls to make before using ``GetCertificateFunc``.
+Supply a function which returns either one of the requests and an error. This is to allow the request data to be different for each request for a new certificate.
 
 ``GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)`` can be used by anything 
-that uses a ``*tls.Config{}`` to read a certificate from an arbitrary source. 
+that uses a ``*tls.Config{}`` to read a certificate from a dynamic source. 
 Also, certificates are automatically re-read when required (shortly 
 before expiration at the latest). That means fire and forget, no need for loops or cronjobs.
 
