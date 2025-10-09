@@ -2,5 +2,7 @@ package certmaker
 
 import "errors"
 
-var ErrStillValid = errors.New("the certificate is still valid")
-var ErrMissingSetup = errors.New("missing setup: call SetupWithSimpleRequest or SetupWithCSR before using GetCertificateFunc")
+var (
+	ErrStillValid   = errors.New("certmaker-sdk: the certificate is still valid")
+	ErrMissingSetup = errors.New("certmaker-sdk: missing setup")
+)

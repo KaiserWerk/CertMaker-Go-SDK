@@ -20,18 +20,16 @@ const (
 	downloadRootCertificatePath   = apiPrefix + "/root-certificate/obtain"
 	requestCertificatePath        = apiPrefix + "/certificate/request"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
-	//solveChallengePath            = apiPrefix + "/challenge/%d/solve"
-	revokeCertificatePath = apiPrefix + "/certificate/%d/revoke"
-	ocspStatusPath        = apiPrefix + "/ocsp"
+	solveHTTP01ChallengePath      = apiPrefix + "/http-01/%d/solve"
+	solveDNS01ChallengePath       = apiPrefix + "/dns-01/%d/solve"
+	revokeCertificatePath         = apiPrefix + "/certificate/%d/revoke"
+	ocspStatusPath                = apiPrefix + "/ocsp"
 
 	// local path to place a token for solving the certificate challenge
 	wellKnownPath = ".well-known/certmaker-challenge/token.txt"
 
 	// used HTTP header
-	authenticationHeader      = "X-Auth-Token"
-	certificateLocationHeader = "X-Certificate-Location"
-	privateKeyLocationHeader  = "X-Privatekey-Location"
-	challengeLocationHeader   = "X-Challenge-Location"
+	authenticationHeader = "X-Auth-Token"
 
 	pemContentType = "application/x-pem-file"
 
@@ -98,7 +96,7 @@ func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.Certificat
 }
 
 // RequestForDomains is a convenience method to fetch a certificate and a private
-// key for just the selected domain(s) without a care about other settings.
+// key for just the selected domain(s) disregarding other options.
 func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int) error {
 	err := os.MkdirAll(cache.CacheDir, 0755)
 	if err != nil {
@@ -140,7 +138,7 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 }
 
 // RequestForIPs is a convenience method to fetch a certificate and a private
-// key for just the selected IP address(es) without a care about other settings.
+// key for just the selected IP address(es) disregarding other options.
 func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 	err := os.MkdirAll(cache.CacheDir, 0755)
 	if err != nil {
@@ -182,7 +180,7 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 }
 
 // RequestForEmails is a convenience method to fetch a certificate and a private
-// key for just the selected email address(es) without a care about other settings.
+// key for just the selected email address(es) disregarding other options.
 func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) error {
 	err := os.MkdirAll(cache.CacheDir, 0755)
 	if err != nil {
@@ -194,33 +192,12 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 		return ErrStillValid
 	}
 
-	cr := SimpleRequest{
+	sr := &SimpleRequest{
 		EmailAddresses: emails,
 		Days:           days,
 	}
 
-	jsonCont, err := json.Marshal(cr)
-	if err != nil {
-		return err
-	}
-	buf := bytes.NewBuffer(jsonCont)
-
-	certLoc, pkLoc, err := c.requestCertificateAndPrivateKey(buf)
-	if err != nil {
-		return err
-	}
-
-	err = c.downloadCertificateFromLocation(cache, certLoc)
-	if err != nil {
-		return fmt.Errorf("RequestForEmails: error downloading certificate from location: " + err.Error())
-	}
-
-	err = c.downloadPrivateKeyFromLocation(cache, pkLoc)
-	if err != nil {
-		return fmt.Errorf("error downloading private key from location: " + err.Error())
-	}
-
-	return nil
+	return c.requestCertificateAndPrivateKey(sr)
 }
 
 // Request requests a fresh certificate and private key with the metadata contained in the
@@ -228,7 +205,7 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 func (c *Client) Request(cache *FileCache, cr *SimpleRequest) error {
 	err := os.MkdirAll(cache.CacheDir, 0755)
 	if err != nil {
-		return fmt.Errorf("error creating cache directory: %s", err.Error())
+		return fmt.Errorf("certmaker-sdk: error creating cache directory: %s", err.Error())
 	}
 
 	err = cache.Valid(c, defaultMinimumValidity)
@@ -485,56 +462,52 @@ func (c *Client) downloadPrivateKeyFromLocation(cache *FileCache, keyLocation st
 }
 
 // requestCertificateAndPrivateKey sends the actual request to the CertMaker instance and handles the response.
-// It returns the locations (URLs) to obtain the certificate and private key from.
-func (c *Client) requestCertificateAndPrivateKey(body io.Reader) (string, string, error) {
-	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, body)
+// It returns either a selection of challenges to be solved or PEM contents of the certificate and private key.
+func (c *Client) requestCertificateAndPrivateKey(simpleRequest *SimpleRequest) error {
+	jsonCont, err := json.Marshal(simpleRequest)
 	if err != nil {
-		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: could not create new HTTP request: " + err.Error())
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, bytes.NewBuffer(jsonCont))
+	if err != nil {
+		return fmt.Errorf("certmaker-sdk: could not create HTTP request: " + err.Error())
 	}
 
 	req.Header.Set(authenticationHeader, c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: could not execute HTTP request: " + err.Error())
+		return fmt.Errorf("certmaker-sdk: could not execute HTTP request: " + err.Error())
 	}
 	defer resp.Body.Close()
 
-	var certLoc, pkLoc string
+	var response CertificateResponse
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return fmt.Errorf("certmaker-sdk: could not decode response body: " + err.Error())
+	}
+
 	switch resp.StatusCode {
 	case http.StatusCreated:
-		// w/o challenge
-		certLoc = resp.Header.Get(certificateLocationHeader)
-		if certLoc == "" {
-			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
+		// w/o challenge, just write the certificate and private key to file
+		err = os.WriteFile(c.updater.cache.CertificatePath(), []byte(response.CertificatePem), 0644)
+		if err != nil {
+			return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
 		}
-
-		pkLoc = resp.Header.Get(privateKeyLocationHeader)
-		if pkLoc == "" {
-			return "", "", fmt.Errorf("missing %s header", privateKeyLocationHeader)
+		err = os.WriteFile(c.updater.cache.PrivateKeyPath(), []byte(response.PrivateKeyPem), 0600)
+		if err != nil {
+			return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 		}
 	case http.StatusAccepted:
 		// with challenge
-		loc := resp.Header.Get(challengeLocationHeader)
-		if loc == "" {
-			return "", "", fmt.Errorf("missing %s header", challengeLocationHeader)
-		}
 
-		token, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", "", err
-		}
-
-		certLoc, pkLoc, err = c.resolveHTTPChallenge(loc, token, c.challengePort)
-		if err != nil {
-			return "", "", err
-		}
 	default:
 		// if it's neither of both, return error
-		return "", "", fmt.Errorf("requestCertificateAndPrivateKey: expected status code 201 or 202, got %d", resp.StatusCode)
+		return fmt.Errorf("certmaker-sdk: expected status code 201 or 202, got %d", resp.StatusCode)
 	}
 
-	return certLoc, pkLoc, nil
+	return nil
 }
 
 func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error) {
