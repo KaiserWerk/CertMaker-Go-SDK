@@ -18,7 +18,7 @@ const (
 	// paths for the CertMaker API
 	apiPrefix                     = "/api/v1"
 	downloadRootCertificatePath   = apiPrefix + "/root-certificate/obtain"
-	requestCertificatePath        = apiPrefix + "/certificate/request"
+	requestCertificatePath        = apiPrefix + "/certificate/request-with-simplerequest"
 	requestCertificateWithCSRPath = apiPrefix + "/certificate/request-with-csr"
 	solveHTTP01ChallengePath      = apiPrefix + "/http-01/%d/solve"
 	solveDNS01ChallengePath       = apiPrefix + "/dns-01/%d/solve"

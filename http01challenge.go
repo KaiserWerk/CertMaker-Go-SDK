@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 )
 
 const wellKnownPath2 = "/.well-known/certmaker-challenge/token"
@@ -47,45 +46,29 @@ func (c *HTTP01Challenge) Setup(ctx context.Context) error {
 	return nil
 }
 
-func (c *HTTP01Challenge) Solve(httpClient *http.Client, cache *FileCache) error {
+func (c *HTTP01Challenge) Solve(ctx context.Context, httpClient *http.Client) (*CertificateResponse, error) {
 	solveURL := fmt.Sprintf("%s/api/v1/http-01/%s/solve", c.instanceURL, c.challengeID)
 
-	req, err := http.NewRequest(http.MethodGet, solveURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, solveURL, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("certmaker-sdk: failed to solve challenge: expected status code 200, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("certmaker-sdk: expected status code 201, got %d", resp.StatusCode)
 	}
 
 	var response CertificateResponse
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if response.Error != "" {
-		return fmt.Errorf("certmaker-sdk: failed to solve challenge with remote error: %s", response.Error)
-	}
-
-	err = os.WriteFile(cache.CertificatePath(), []byte(response.CertificatePem), 0600)
-	if err != nil {
-		return err
-	}
-
-	if response.PrivateKeyPem != "" {
-		err = os.WriteFile(cache.PrivateKeyPath(), []byte(response.PrivateKeyPem), 0600)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return &response, nil
 }
