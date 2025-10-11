@@ -12,11 +12,12 @@ import (
 //
 // You can either supply zero or more Domains, zero or more IPs and zero or more EmailAddresses.
 type SimpleRequest struct {
-	Domains        []string             `json:"domains"`
-	IPs            []string             `json:"ips"`
-	EmailAddresses []string             `json:"emails"`
-	Subject        SimpleRequestSubject `json:"subject,omitempty"`
-	Days           int                  `json:"days"`
+	Domains            []string             `json:"domains"`
+	IPs                []string             `json:"ips"`
+	EmailAddresses     []string             `json:"emails"`
+	Subject            SimpleRequestSubject `json:"subject,omitempty"`
+	Days               int                  `json:"days"`
+	PreferredChallenge string               `json:"preferred_challenge,omitempty"`
 }
 
 // SimpleRequestSubject represents the subject of a SimpleRequest
@@ -44,9 +45,11 @@ type updater struct {
 // The default value is false.
 // ChallengePort is the port used for HTTP-01 challenges. The default value is 80. You have to ensure
 // that your application is able to bind to that port, otherwise HTTP-01 challenges will fail.
+// PreferredChallenge can be either "http-01" or "dns-01". If it is empty, "http-01" will be used as the preferred challenge type.
 type ClientSettings struct {
-	Transport     *http.Transport
-	ClientTimeout time.Duration
-	StrictMode    bool
-	ChallengePort uint16
+	Transport       *http.Transport
+	ClientTimeout   time.Duration
+	StrictMode      bool
+	ChallengePort   uint16
+	ChallengeSolver ChallengeSolver
 }

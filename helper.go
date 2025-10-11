@@ -10,3 +10,15 @@ func fileExists(filename string) bool {
 	}
 	return !info.IsDir()
 }
+
+// StringSliceContains returns true if the string key
+// exists in the string slice s.
+func StringSliceContains(s []string, key string) bool {
+	for _, v := range s {
+		if v == key {
+			return true
+		}
+	}
+
+	return false
+}
