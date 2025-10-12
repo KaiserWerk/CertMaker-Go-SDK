@@ -233,32 +233,23 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
 				}
 
-				// var b bytes.Buffer
-				// err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: []byte(certificateResponse.CertificatePEM)})
-				// if err != nil {
-				// 	return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
-				// }
-				block, _ := pem.Decode([]byte(certificateResponse.CertificatePEM))
-				if block == nil || block.Type != "CERTIFICATE" {
-					return fmt.Errorf("certmaker-sdk: failed to decode PEM block containing certificate")
+				var b bytes.Buffer
+				err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: []byte(certificateResponse.CertificatePEM)})
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
 				}
 
-				err = os.WriteFile(cache.CertificatePath(), block.Bytes, 0644)
+				err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
 				}
 
-				// err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte(certificateResponse.PrivateKeyPEM)})
-				// if err != nil {
-				// 	return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
-				// }
-
-				block, _ = pem.Decode([]byte(certificateResponse.PrivateKeyPEM))
-				if block == nil || block.Type != "PRIVATE KEY" {
-					return fmt.Errorf("certmaker-sdk: failed to decode PEM block containing private key")
+				err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte(certificateResponse.PrivateKeyPEM)})
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
 				}
 
-				err = os.WriteFile(cache.PrivateKeyPath(), block.Bytes, 0600)
+				err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 				}
