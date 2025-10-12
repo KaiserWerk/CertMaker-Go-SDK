@@ -215,10 +215,43 @@ func (c *FileCache) CopyPrivateKeyFromFile(src string) error {
 	return nil
 }
 
+func (c *FileCache) HasCertificate() bool {
+	return fileExists(c.CertificatePath())
+}
+
 func (c *FileCache) HasRootCertificate() bool {
 	return fileExists(c.RootCertificatePath())
 }
 
 func (c *FileCache) HasPrivateKey() bool {
 	return fileExists(c.PrivateKeyPath())
+}
+
+// CClear removes the cache's certificate, private key, and, if true is supplied, root certificate as well.
+// This is a destructive operation and cannot be undone.
+func (c *FileCache) Clear(removeRootCert bool) error {
+	// remove the certificate file
+	if c.HasCertificate() {
+		err := os.Remove(c.CertificatePath())
+		if err != nil {
+			return fmt.Errorf("could not remove certificate file: %w", err)
+		}
+	}
+	// remove the private key file
+	if c.HasPrivateKey() {
+		err := os.Remove(c.PrivateKeyPath())
+		if err != nil {
+			return fmt.Errorf("could not remove private key file: %w", err)
+		}
+	}
+
+	// remove the root certificate file if it exists
+	if c.HasRootCertificate() && removeRootCert {
+		err := os.Remove(c.RootCertificatePath())
+		if err != nil {
+			return fmt.Errorf("could not remove root certificate file: %w", err)
+		}
+	}
+
+	return nil
 }
