@@ -188,6 +188,10 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthorized
+	}
+
 	var response CertificateResponse
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
