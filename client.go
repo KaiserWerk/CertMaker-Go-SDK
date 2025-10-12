@@ -224,7 +224,7 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 					return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
 				}
 
-				certificateResponse, err := c.challengeSolver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID)
+				certificateResponse, err := c.challengeSolver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID, c.setHeader)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
 				}

@@ -78,7 +78,7 @@ func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domai
 	return nil
 }
 
-func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challengeID string) (*CertificateResponse, error) {
+func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challengeID string, setHeader func(*http.Request)) (*CertificateResponse, error) {
 	solveURL := fmt.Sprintf("%s/api/v1/dns-01/%s/solve", instanceURL, challengeID)
 
 	httpClient := &http.Client{Timeout: 15 * time.Minute}
@@ -86,6 +86,7 @@ func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challe
 	if err != nil {
 		return nil, err
 	}
+	setHeader(req)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

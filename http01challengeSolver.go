@@ -41,7 +41,7 @@ func (c *HTTP01ChallengeSolver) Setup(ctx context.Context, token string, domains
 	return nil
 }
 
-func (c *HTTP01ChallengeSolver) Solve(ctx context.Context, instanceURL, challengeID string) (*CertificateResponse, error) {
+func (c *HTTP01ChallengeSolver) Solve(ctx context.Context, instanceURL, challengeID string, setHeader func(*http.Request)) (*CertificateResponse, error) {
 	solveURL := fmt.Sprintf("%s/api/v1/http-01/%s/solve", instanceURL, challengeID)
 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
@@ -49,6 +49,7 @@ func (c *HTTP01ChallengeSolver) Solve(ctx context.Context, instanceURL, challeng
 	if err != nil {
 		return nil, err
 	}
+	setHeader(req)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
