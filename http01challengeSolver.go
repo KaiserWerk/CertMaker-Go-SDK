@@ -34,8 +34,10 @@ func (c *HTTP01ChallengeSolver) Setup(ctx context.Context, token string, domains
 		Handler: router,
 	}
 	go server.ListenAndServe()
-	<-ctx.Done()
-	_ = server.Shutdown(ctx)
+	go func() {
+		<-ctx.Done()
+		_ = server.Shutdown(ctx)
+	}()
 	return nil
 }
 
