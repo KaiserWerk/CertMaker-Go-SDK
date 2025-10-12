@@ -118,10 +118,6 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 		Days:    days,
 	}
 
-	if sr.PreferredChallenge == "" {
-		sr.PreferredChallenge = c.preferredChallenge
-	}
-
 	return c.Request(cache, &sr)
 }
 
@@ -143,10 +139,6 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 		Days: days,
 	}
 
-	if sr.PreferredChallenge == "" {
-		sr.PreferredChallenge = c.preferredChallenge
-	}
-
 	return c.Request(cache, &sr)
 }
 
@@ -166,10 +158,6 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 	sr := SimpleRequest{
 		EmailAddresses: emails,
 		Days:           days,
-	}
-
-	if sr.PreferredChallenge == "" {
-		sr.PreferredChallenge = c.preferredChallenge
 	}
 
 	return c.Request(cache, &sr)
@@ -209,7 +197,7 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 	if resp.StatusCode == http.StatusAccepted {
 		// with challenge
 
-		if !response.HTTP01Challenge && !response.DNS01Challenge {
+		if len(response.Challenges) == 0 {
 			return ErrNoChallengeIssued
 		}
 
@@ -220,23 +208,28 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 		challengeCtx, challengeCancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer challengeCancel()
 
-		err = c.challengeSolver.Setup(challengeCtx, response.ChallengeToken, simpleRequest.Domains)
-		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
-		}
+		for _, challenge := range response.Challenges {
+			if c.challengeSolver.CanSolve(challenge.ChallengeType) {
+				err = c.challengeSolver.Setup(challengeCtx, challenge.ChallengeToken, simpleRequest.Domains)
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
+				}
 
-		certificateResponse, err := c.challengeSolver.Solve(challengeCtx, c.baseUrl, response.ChallengeID)
-		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
-		}
+				certificateResponse, err := c.challengeSolver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID)
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
+				}
 
-		err = os.WriteFile(cache.CertificatePath(), []byte(certificateResponse.CertificatePEM), 0644)
-		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
-		}
-		err = os.WriteFile(cache.PrivateKeyPath(), []byte(certificateResponse.PrivateKeyPEM), 0600)
-		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
+				err = os.WriteFile(cache.CertificatePath(), []byte(certificateResponse.CertificatePEM), 0644)
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
+				}
+				err = os.WriteFile(cache.PrivateKeyPath(), []byte(certificateResponse.PrivateKeyPEM), 0600)
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
+				}
+				break // no need to solve another challenge
+			}
 		}
 	} else if resp.StatusCode == http.StatusCreated {
 		// w/o challenge, just write the certificate and private key to file

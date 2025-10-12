@@ -5,6 +5,7 @@ import (
 )
 
 type ChallengeSolver interface {
+	CanSolve(challengeType string) bool
 	// Setup prepares the challenge for solving, e.g., by starting a server returning the token
 	// or creating DNS records.
 	Setup(ctx context.Context, token string, domains []string) error

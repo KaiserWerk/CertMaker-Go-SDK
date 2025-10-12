@@ -14,6 +14,10 @@ type HTTP01ChallengeSolver struct {
 	challengePort uint16
 }
 
+func (c *HTTP01ChallengeSolver) CanSolve(challengeType string) bool {
+	return challengeType == "http-01"
+}
+
 func (c *HTTP01ChallengeSolver) Setup(ctx context.Context, token string, domains []string) error {
 	if len(domains) == 0 {
 		return ErrNoDomainsProvided

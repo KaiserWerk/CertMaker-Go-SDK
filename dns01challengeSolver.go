@@ -25,8 +25,8 @@ type OVHDNS01ChallengeSolver struct {
 	recordsToDelete map[string]int // map of domain to recordID
 }
 
-func (c *OVHDNS01ChallengeSolver) Type() string {
-	return "dns-01"
+func (c *OVHDNS01ChallengeSolver) CanSolve(challengeType string) bool {
+	return challengeType == "dns-01"
 }
 
 func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domains []string) error {

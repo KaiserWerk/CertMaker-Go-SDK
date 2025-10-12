@@ -10,14 +10,14 @@ import (
 // is optional and can be omitted. Days can be between 1 and 182. If the value is higher than 182, then it
 // will be set to 182 on the server side. If it is lower than 1, it will be set to 1 on the server side.
 //
-// You can either supply zero or more Domains, zero or more IPs and zero or more EmailAddresses.
+// You can either supply zero or more Domains, zero or more IPs and zero or more EmailAddresses, but any one
+// of these three slices must contain at least one entry.
 type SimpleRequest struct {
-	Domains            []string             `json:"domains"`
-	IPs                []string             `json:"ips"`
-	EmailAddresses     []string             `json:"emails"`
-	Subject            SimpleRequestSubject `json:"subject,omitempty"`
-	Days               int                  `json:"days"`
-	PreferredChallenge string               `json:"preferred_challenge,omitempty"`
+	Domains        []string             `json:"domains"`
+	IPs            []string             `json:"ips"`
+	EmailAddresses []string             `json:"emails"`
+	Subject        SimpleRequestSubject `json:"subject,omitempty"`
+	Days           int                  `json:"days"`
 }
 
 // SimpleRequestSubject represents the subject of a SimpleRequest
