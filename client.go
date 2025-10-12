@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -233,8 +234,14 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
 				}
 
+				// certificate to file
+				certContents, err := base64.StdEncoding.DecodeString(certificateResponse.CertificatePEM)
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
+				}
+
 				var b bytes.Buffer
-				err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: []byte(certificateResponse.CertificatePEM)})
+				err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
 				}
@@ -244,17 +251,29 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 					return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
 				}
 
-				err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte(certificateResponse.PrivateKeyPEM)})
+				b.Reset()
+
+				// private key to file
+				privateKeyContents, err := base64.StdEncoding.DecodeString(certificateResponse.PrivateKeyPEM)
 				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
+					return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
+				}
+
+				err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not encode private key to PEM format: " + err.Error())
 				}
 
 				err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 				}
-				challengeCancel() // immediately cancel the context to stop any running challenge server
-				break             // no need to solve another challenge
+
+				// immediately cancel the context to stop any running challenge server
+				challengeCancel()
+
+				// no need to solve another challenge
+				break
 			}
 		}
 	} else if resp.StatusCode == http.StatusCreated {
