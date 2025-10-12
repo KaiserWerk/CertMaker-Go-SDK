@@ -193,8 +193,11 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
 		return ErrUnauthorized
+	case http.StatusBadRequest:
+		return ErrBadRequest
 	}
 
 	var response CertificateResponse
@@ -237,7 +240,8 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 				}
-				break // no need to solve another challenge
+				challengeCancel() // immediately cancel the context to stop any running challenge server
+				break             // no need to solve another challenge
 			}
 		}
 	} else if resp.StatusCode == http.StatusCreated {

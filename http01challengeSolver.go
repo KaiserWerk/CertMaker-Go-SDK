@@ -1,6 +1,7 @@
 package certmaker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,7 +46,15 @@ func (c *HTTP01ChallengeSolver) Solve(ctx context.Context, instanceURL, challeng
 	solveURL := fmt.Sprintf("%s/api/v1/http-01/%s/solve", instanceURL, challengeID)
 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, solveURL, nil)
+
+	request := HTTP01ChallengeRequest{
+		ChallengePort: c.ChallengePort,
+	}
+	j, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, solveURL, bytes.NewBuffer(j))
 	if err != nil {
 		return nil, err
 	}
