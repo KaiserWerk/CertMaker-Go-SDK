@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -232,11 +233,22 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
 				}
 
-				err = os.WriteFile(cache.CertificatePath(), []byte(certificateResponse.CertificatePEM), 0644)
+				var b bytes.Buffer
+				err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: []byte(certificateResponse.CertificatePEM)})
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
+				}
+
+				err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
 				}
-				err = os.WriteFile(cache.PrivateKeyPath(), []byte(certificateResponse.PrivateKeyPEM), 0600)
+
+				err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte(certificateResponse.PrivateKeyPEM)})
+				if err != nil {
+					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
+				}
+				err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
 				if err != nil {
 					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 				}
