@@ -11,7 +11,7 @@ import (
 const wellKnownPath2 = "/.well-known/certmaker-challenge/token"
 
 type HTTP01ChallengeSolver struct {
-	challengePort uint16
+	ChallengePort uint16
 }
 
 func (c *HTTP01ChallengeSolver) CanSolve(challengeType string) bool {
@@ -30,7 +30,7 @@ func (c *HTTP01ChallengeSolver) Setup(ctx context.Context, token string, domains
 	})
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", c.challengePort),
+		Addr:    fmt.Sprintf(":%d", c.ChallengePort),
 		Handler: router,
 	}
 	go server.ListenAndServe()
