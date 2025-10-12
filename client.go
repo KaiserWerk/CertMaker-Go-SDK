@@ -278,12 +278,28 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 		}
 	} else if resp.StatusCode == http.StatusCreated {
 		// w/o challenge, just write the certificate and private key to file
-		err = os.WriteFile(cache.CertificatePath(), []byte(response.CertificatePEM), 0644)
+		certContents, err := base64.StdEncoding.DecodeString(response.CertificatePEM)
+		if err != nil {
+			return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
+		}
+
+		var b bytes.Buffer
+		pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
+		err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
 		if err != nil {
 			return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
 		}
 
-		err = os.WriteFile(cache.PrivateKeyPath(), []byte(response.PrivateKeyPEM), 0600)
+		b.Reset()
+
+		// private key to file
+		privateKeyContents, err := base64.StdEncoding.DecodeString(response.PrivateKeyPEM)
+		if err != nil {
+			return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
+		}
+
+		pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
+		err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
 		if err != nil {
 			return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
 		}
