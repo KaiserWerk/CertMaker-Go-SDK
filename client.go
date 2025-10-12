@@ -39,14 +39,13 @@ const (
 
 // Client represents the structure required to obtain certificates (and private keys) from a remote location.
 type Client struct {
-	httpClient         *http.Client
-	baseUrl            string
-	token              string
-	strictMode         bool
-	challengePort      uint16
-	preferredChallenge string   // "http-01" or "dns-01"
-	updater            *updater // required for the GetCertificateFunc
-	challengeSolver    ChallengeSolver
+	httpClient      *http.Client
+	baseUrl         string
+	token           string
+	strictMode      bool
+	challengePort   uint16
+	updater         *updater // required for the GetCertificateFunc
+	challengeSolver ChallengeSolver
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values.
@@ -181,8 +180,14 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 		return err
 	}
 
+	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificatePath, bytes.NewBuffer(jsonCont))
+	if err != nil {
+		return err
+	}
+	c.setHeader(req)
+
 	// send POST request with the SimpleRequest as JSON body
-	resp, err := c.httpClient.Post(c.baseUrl+requestCertificatePath, "application/json", bytes.NewBuffer(jsonCont))
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -441,6 +446,11 @@ func (c *Client) DownloadRootCertificate(cache *FileCache) error {
 	}
 
 	return nil
+}
+
+func (c *Client) setHeader(req *http.Request) {
+	req.Header.Set(authenticationHeader, c.token)
+	req.Header.Set("Content-Type", "application/json")
 }
 
 // func (c *Client) downloadCertificateFromLocation(cache *FileCache, certLocation string) error {
