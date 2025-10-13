@@ -12,7 +12,7 @@ func main() {
 	certMakerInstance := "http://localhost:8880"
 	token := "<token>"
 
-	cache, _ := certmaker.NewCache()
+	cache, _ := certmaker.NewFileCache()
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
 		ClientTimeout: 10 * time.Minute,
 	})

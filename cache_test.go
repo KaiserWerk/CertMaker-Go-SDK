@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewCache(t *testing.T) {
-	c, err := NewCache()
+	c, err := NewFileCache()
 	if err != nil {
 		t.Fatalf("expeced no error with NewCache(), got %s", err.Error())
 	}
