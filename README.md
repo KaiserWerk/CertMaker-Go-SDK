@@ -9,74 +9,59 @@ convenience methods but also some lower level methods for more fine-tuned contro
 
 ## Installation
 
+Import it with
+```golang
+import certmaker "github.com/KaiserWerk/CertMaker-Go-SDK"
+```
+and either 
 ```bash
 go get github.com/KaiserWerk/CertMaker-Go-SDK
+```
+or
+```bash
+go mod tidy
 ```
 
 ## Usage
 
-There are two important structs you should understand before diving into development, the *Client* and the *FileCache*:
+The `Client`'s purpose is to request and download certificates (and private keys, if any). Supply an API Key and a base URL to the `NewClient()` function. The `Client` requires a `Cache` to function.
+
+There are two different cache implementations. A `FileCache` and a `MemoryCache`. Both cache types have a pseudo-constructor. You can also implement your own, as long as it satisfies the `Cache` interface.
+In most cases, a `FileCache` should be preferred for storing certificates and private keys on the filesystem, so they can be read and re-used on app restart.
+
+### Basic setup
 
 ```golang
-type Client struct {
-	// unexported fields
-}
-```
+cache, _ := certmaker.NewFileCache()
+// do a certificate request before using the paths
+// ...
 
-The ``Client``'s purpose is to request and download certificates (and private keys, if any). That's why you can supply
-an API Key and a base URL to the ``NewClient()`` function. The ``Client`` requires a valid ``FileCache`` to work
-properly.
-
-
-```golang
-type FileCache struct {
-    CacheDir                string
-    PrivateKeyFilename      string
-    CertificateFilename     string
-    RootCertificateFilename string
-}
-```
-
-Unlike the ``Client``, the ``FileCache`` only has exported fields which can be manipulated.
-There is also a ``NewCache()`` function, which sets up a ``FileCache`` with useful defaults. The ``FileCache`` is required
-to interact with the filesystem. *CacheDir* is the directory (without filename) where the certificate/private key reside, 
-``PrivateKeyFilename`` contains just the private key file name, ``CertificateFilename`` contains just the
-certificate file name.
-
-
-There are two methods to obtain the full (and absolute) certificate/private key paths:
-```golang
 certPath := cache.GetCertificatePath() // e.g. /opt/app-certs/localhost/cert.pem
 keyPath := cache.GetPrivateKeyPath() // e.g. /opt/app-certs/localhost/key.pem
 http.ListenAndServeTLS(":1234", certPath, keyPath, nil)
 ```
 
-### Usage example
+### Extended example
 To put it all together, here is an example (errors ignored for brevity):
 ```golang
 certMakerInstance := "http://12.34.56.78:8880" // no trailing slash needed
 token := "Ar8S71NBblDCMVJD0dkftX36ea5zG7QSI7Q2trkEVwBZpqsQzNTFneSgMcM1" // taken from the account info
 
-cache, _ := certmaker.NewCache()
-client := certmaker.NewClient(certMakerInstance, token, nil)
-```
-You can modify the ``Client``'s underlying HTTP client and other options by supplying client settings as third
-parameter, e.g.:
+solver := &MyDNS01ChallengeSolver{}
 
-```golang
-// ...
-cache, _ := certmaker.NewCache()
+cache := certmaker.NewMemoryCache()
 client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
     // a custom *http.Transport{} for the HTTP client
     Transport:     nil, 
     // the timeout for the HTTP client (default is 5 seconds)
     ClientTimeout: 4 * time.Second,
-    // when checking if a local certificate is still valid, also check with the CertMaker API 
-    // if it's been revoked
+    // when checking if a local certificate is still valid, also checks with the CertMaker API whether it's been revoked
     StrictMode:    true,
-    // the port is only required if the verification challenge (see below) is enabled
-    // on the API's side and make sure it is open
+    // the port is only required if the verification challenge HTTP-01 (see below) is enabled on the remote side and make sure it is open
     ChallengePort: 8000, 
+    // Supply the actual challenge solver(s) to be used for solving verification challenges
+    // Implement your own solvers by satisfying the ChallengeSolver interface
+    ChallengeSolver []ChallengeSolver{solver},
 })
 ```
 
@@ -88,34 +73,31 @@ Please refer to the `examples` directory.
 
 CertMaker uses a slightly simplified version of the HTTP-01 challenge.
 If the challenge is enabled on the server side, a token has to be reachable via every DNS name or IP
-address. This means that at least one port must be open to be used for the solving part. You can supply it using the ``certmaker.ClientSettings{}``.
-Email addresses have no relevance in the verification challenge.
+address. This means that at least one port must be open and free to bind to to be used to solve the verification challenge. You can supply it using the `certmaker.ClientSettings{}`.
+Email addresses have no relevance in the verification challenge, only IP addresses and domain names.
 
 ## Request types
 
 There are two types of certificate requests. 
 
-1. A ``SimpleRequest`` requests a private key with the corresponding certificate with the supplied request information.
-2. A ``*x509.CertificateRequest`` is created from an existing private key, so just a certificate is requested. This is the default that is used by most certificate authorities.
+1. A `SimpleRequest` requests a private key with the corresponding certificate with the supplied request information.
+2. A `*x509.CertificateRequest` is created from an existing private key, so just a certificate is requested. This is the default that is used by most certificate authorities.
 
 ## Convenience methods
 
-``RequestForDomains(cache *FileCache, domains []string, days int) error`` tries to obtain a 
-certificate and private key with a validity of ``days`` for every DNS name in ``domains`` and writes the 
-downloaded data into ``cache``.
+`RequestForDomains(cache Cache, domains []string, days int) error` tries to obtain a 
+certificate and private key with a validity of `days` for every DNS name in `domains` and writes the downloaded data into `cache`.
 
-``RequestForIPs(cache *FileCache, ips []string, days int) error`` tries to obtain a
-certificate and private key for with a validity of ``days`` every IP address in ``ips`` and writes the
-downloaded data into ``cache``.
+`RequestForIPs(cache Cache, ips []string, days int) error` tries to obtain a
+certificate and private key for with a validity of `days` every IP address in `ips` and writes the downloaded data into `cache`.
 
-``RequestForEmails(cache *FileCache, emails []string, days int) error`` tries to obtain a
-certificate and private key for with a validity of ``days`` every email address in ``emails`` and writes the
-downloaded data into ``cache``.
+`RequestForEmails(cache Cache, emails []string, days int) error` tries to obtain a
+certificate and private key for with a validity of `days` every email address in `emails` and writes the downloaded data into `cache`.
 
 ## Lower-level methods
 
-``Request(cache *FileCache, cr *SimpleRequest) error`` requires a ``SimpleRequest`` to obtain
-a certificate and private key into ``cache``. This method allows for more fine-grained control.
+`Request(cache Cache, cr *SimpleRequest) error` requires a `SimpleRequest` to obtain
+a certificate and private key into `cache`. This method allows for more fine-grained control.
 
 Example:
 ```golang
@@ -137,9 +119,9 @@ err = client.Request(cache, &certmaker.SimpleRequest{
 })
 ```
 
-``RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) error`` takes a *Certificate Signing Request*
+`RequestWithCSR(cache Cache, csr *x509.CertificateRequest) error` takes a *Certificate Signing Request*
 and tries to obtain a certificate (no private key) as requested and writes the
-downloaded data into ``cache``.
+downloaded data into `cache`.
 
 Example:
 ```golang
@@ -151,12 +133,12 @@ err = client.RequestWithCSR(cache, csr)
 
 ## Special utility methods
 
-``SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error))`` and 
-``SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error))`` are preparatory calls to make before using ``GetCertificateFunc``.
+`SetupWithSimpleRequest(cache Cache, srFunc func() (*SimpleRequest, error))` and 
+`SetupWithCSR(cache Cache, csrFunc func() (*x509.CertificateRequest, error))` are preparatory calls to make before using ``GetCertificateFunc``.
 Supply a function which returns either one of the requests and an error. This is to allow the request data to be different for each request for a new certificate.
 
-``GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)`` can be used by anything 
-that uses a ``*tls.Config{}`` to read a certificate from a dynamic source. 
+`GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate, error)` can be used by anything 
+that uses a `&tls.Config{}` to read a certificate from a dynamic source. 
 Also, certificates are automatically re-read when required (shortly 
 before expiration at the latest). That means fire and forget, no need for loops or cronjobs.
 
