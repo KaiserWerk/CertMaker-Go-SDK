@@ -83,6 +83,8 @@ This challenge is only available for domain names, not for IP addresses.
 
 In short, the DNS-01 challenge requires you to prove domain ownership by creating a TXT record with the `_certmaker_challenge` name and a specific value provided by the challenge. Your `ChallengeSolver` implementation will handle the creation and verification of these records with your DNS provider.
 
+You may use the existing `OVHDNS01ChallengeSolver` as a ready-made implementation for handling the DNS-01 challenge with OVH DNS.
+
 ## Request types
 
 There are two types of certificate requests. 
