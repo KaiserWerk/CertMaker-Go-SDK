@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -15,14 +14,22 @@ import (
 
 const (
 	ovhBaseURL = "https://eu.api.ovh.com/v1"
-
-	ovhAppKeyEnv      = "CM_OVH_APP_KEY"
-	ovhAppSecretEnv   = "CM_OVH_APP_SECRET"
-	ovhConsumerKeyEnv = "CM_OVH_CONSUMER_KEY"
 )
 
 type OVHDNS01ChallengeSolver struct {
 	recordsToDelete map[string]int // map of domain to recordID
+	appKey          string
+	appSecret       string
+	consumerKey     string
+}
+
+func NewOVHDNS01ChallengeSolver(appKey, appSecret, consumerKey string) *OVHDNS01ChallengeSolver {
+	return &OVHDNS01ChallengeSolver{
+		recordsToDelete: make(map[string]int),
+		appKey:          appKey,
+		appSecret:       appSecret,
+		consumerKey:     consumerKey,
+	}
 }
 
 func (c *OVHDNS01ChallengeSolver) CanSolve(challengeType string) bool {
@@ -39,9 +46,9 @@ func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domai
 	// use OVH EU API to create a TXT record for the domain with the token
 	client, err := ovh.NewClient(
 		"ovh-eu",
-		os.Getenv(ovhAppKeyEnv),
-		os.Getenv(ovhAppSecretEnv),
-		os.Getenv(ovhConsumerKeyEnv),
+		c.appKey,
+		c.appSecret,
+		c.consumerKey,
 	)
 	if err != nil {
 		return err
@@ -107,9 +114,9 @@ func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challe
 	// clean up the DNS record
 	client, err := ovh.NewClient(
 		"ovh-eu",
-		os.Getenv(ovhAppKeyEnv),
-		os.Getenv(ovhAppSecretEnv),
-		os.Getenv(ovhConsumerKeyEnv),
+		c.appKey,
+		c.appSecret,
+		c.consumerKey,
 	)
 	if err != nil {
 		return nil, err
