@@ -41,7 +41,7 @@ keyPath := cache.GetPrivateKeyPath() // e.g. /opt/app-certs/localhost/key.pem
 http.ListenAndServeTLS(":1234", certPath, keyPath, nil)
 ```
 
-### Extended example
+### Extended setup
 To put it all together, here is an example (errors ignored for brevity):
 ```golang
 certMakerInstance := "http://12.34.56.78:8880" // no trailing slash needed
@@ -61,7 +61,7 @@ client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSetting
     ChallengePort: 8000, 
     // Supply the actual challenge solver(s) to be used for solving verification challenges
     // Implement your own solvers by satisfying the ChallengeSolver interface
-    ChallengeSolver []ChallengeSolver{solver},
+    ChallengeSolver: []ChallengeSolver{solver},
 })
 ```
 
@@ -75,6 +75,13 @@ CertMaker uses a slightly simplified version of the HTTP-01 challenge.
 If the challenge is enabled on the server side, a token has to be reachable via every DNS name or IP
 address. This means that at least one port must be open and free to bind to to be used to solve the verification challenge. You can supply it using the `certmaker.ClientSettings{}`.
 Email addresses have no relevance in the verification challenge, only IP addresses and domain names.
+
+## The DNS-01 challenge
+
+CertMaker also supports the DNS-01 challenge, which requires creating specific DNS records to prove domain ownership. You need to implement a `ChallengeSolver` that can handle the DNS-01 challenge for your DNS provider.
+This challenge is only available for domain names, not for IP addresses.
+
+In short, the DNS-01 challenge requires you to prove domain ownership by creating a TXT record with the `_certmaker_challenge` name and a specific value provided by the challenge. Your `ChallengeSolver` implementation will handle the creation and verification of these records with your DNS provider.
 
 ## Request types
 
