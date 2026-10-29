@@ -47,7 +47,7 @@ type Client struct {
 	strictMode      bool
 	challengePort   uint16
 	updater         *updater // required for the GetCertificateFunc
-	challengeSolver ChallengeSolver
+	challengeSolver []ChallengeSolver
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values.
@@ -77,13 +77,14 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 		}
 	} else {
 		c.httpClient = &http.Client{Timeout: clientDefaultTimeout}
+		c.challengeSolver = []ChallengeSolver{}
 	}
 
 	return &c
 }
 
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*SimpleRequest, error), minValidity time.Duration) {
+func (c *Client) SetupWithSimpleRequest(cache Cache, srFunc func() (*SimpleRequest, error), minValidity time.Duration) {
 	c.updater = &updater{
 		cache:       cache,
 		srFunc:      srFunc,
@@ -92,7 +93,7 @@ func (c *Client) SetupWithSimpleRequest(cache *FileCache, srFunc func() (*Simple
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.CertificateRequest, error), privKeyFunc func() (string, error), minValidity time.Duration) {
+func (c *Client) SetupWithCSR(cache Cache, csrFunc func() (*x509.CertificateRequest, error), privKeyFunc func() (string, error), minValidity time.Duration) {
 	c.updater = &updater{
 		cache:       cache,
 		csrFunc:     csrFunc,
@@ -103,13 +104,8 @@ func (c *Client) SetupWithCSR(cache *FileCache, csrFunc func() (*x509.Certificat
 
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) disregarding other options.
-func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int) error {
-	err := os.MkdirAll(cache.CacheDir, 0755)
-	if err != nil {
-		return fmt.Errorf("error creating cache directory: %s", err.Error())
-	}
-
-	err = cache.Valid(c, defaultMinimumValidity)
+func (c *Client) RequestForDomains(cache Cache, domains []string, days int) error {
+	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -124,13 +120,8 @@ func (c *Client) RequestForDomains(cache *FileCache, domains []string, days int)
 
 // RequestForIPs is a convenience method to fetch a certificate and a private
 // key for just the selected IP address(es) disregarding other options.
-func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
-	err := os.MkdirAll(cache.CacheDir, 0755)
-	if err != nil {
-		return fmt.Errorf("error creating cache directory: %s", err.Error())
-	}
-
-	err = cache.Valid(c, defaultMinimumValidity)
+func (c *Client) RequestForIPs(cache Cache, ips []string, days int) error {
+	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -145,13 +136,8 @@ func (c *Client) RequestForIPs(cache *FileCache, ips []string, days int) error {
 
 // RequestForEmails is a convenience method to fetch a certificate and a private
 // key for just the selected email address(es) disregarding other options.
-func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) error {
-	err := os.MkdirAll(cache.CacheDir, 0755)
-	if err != nil {
-		return fmt.Errorf("error creating cache directory: %s", err.Error())
-	}
-
-	err = cache.Valid(c, defaultMinimumValidity)
+func (c *Client) RequestForEmails(cache Cache, emails []string, days int) error {
+	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -166,13 +152,8 @@ func (c *Client) RequestForEmails(cache *FileCache, emails []string, days int) e
 
 // Request requests a fresh certificate and private key with the metadata contained in the
 // *SimpleRequest and puts it into *Cache.
-func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
-	err := os.MkdirAll(cache.CacheDir, 0755)
-	if err != nil {
-		return fmt.Errorf("certmaker-sdk: error creating cache directory: %s", err.Error())
-	}
-
-	err = cache.Valid(c, defaultMinimumValidity)
+func (c *Client) Request(cache Cache, simpleRequest *SimpleRequest) error {
+	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -223,57 +204,59 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 		defer challengeCancel()
 
 		for _, challenge := range response.Challenges {
-			if c.challengeSolver.CanSolve(challenge.ChallengeType) {
-				err = c.challengeSolver.Setup(challengeCtx, challenge.ChallengeToken, simpleRequest.Domains)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
+			for _, solver := range c.challengeSolver {
+				if solver.CanSolve(challenge.ChallengeType) {
+					err = solver.Setup(challengeCtx, challenge.ChallengeToken, simpleRequest.Domains)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
+					}
+
+					certificateResponse, err := solver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID, c.setHeader)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
+					}
+
+					// certificate to file
+					certContents, err := base64.StdEncoding.DecodeString(certificateResponse.CertificatePEM)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
+					}
+
+					var b bytes.Buffer
+					err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
+					}
+
+					err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
+					}
+
+					b.Reset()
+
+					// private key to file
+					privateKeyContents, err := base64.StdEncoding.DecodeString(certificateResponse.PrivateKeyPEM)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
+					}
+
+					err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not encode private key to PEM format: " + err.Error())
+					}
+
+					err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
+					if err != nil {
+						return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
+					}
+
+					// immediately cancel the context to stop any running challenge server
+					challengeCancel()
+
+					// no need to solve another challenge
+					break
 				}
-
-				certificateResponse, err := c.challengeSolver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID, c.setHeader)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
-				}
-
-				// certificate to file
-				certContents, err := base64.StdEncoding.DecodeString(certificateResponse.CertificatePEM)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
-				}
-
-				var b bytes.Buffer
-				err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
-				}
-
-				err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
-				}
-
-				b.Reset()
-
-				// private key to file
-				privateKeyContents, err := base64.StdEncoding.DecodeString(certificateResponse.PrivateKeyPEM)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
-				}
-
-				err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not encode private key to PEM format: " + err.Error())
-				}
-
-				err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
-				if err != nil {
-					return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
-				}
-
-				// immediately cancel the context to stop any running challenge server
-				challengeCancel()
-
-				// no need to solve another challenge
-				break
 			}
 		}
 	} else if resp.StatusCode == http.StatusCreated {
@@ -315,13 +298,8 @@ func (c *Client) Request(cache *FileCache, simpleRequest *SimpleRequest) error {
 // commonly known as a Certificate Signing Request (CSR).
 // The *Cache must have the PrivateKeyFilename field set to a file containing a valid private key. Otherwise
 // the process will fail.
-func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) error {
-	err := os.MkdirAll(cache.CacheDir, 0755)
-	if err != nil {
-		return fmt.Errorf("error creating cache directory: %s", err.Error())
-	}
-
-	err = cache.Valid(c, defaultMinimumValidity)
+func (c *Client) RequestWithCSR(cache Cache, csr *x509.CertificateRequest) error {
+	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
@@ -344,7 +322,7 @@ func (c *Client) RequestWithCSR(cache *FileCache, csr *x509.CertificateRequest) 
 
 // RequestRepeatedly is like Request, but runs repeatedly with the supplied interval.
 // This is a blocking method, call it as a goroutine.
-func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *SimpleRequest, interval time.Duration) {
+func (c *Client) RequestRepeatedly(ctx context.Context, cache Cache, cr *SimpleRequest, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -366,7 +344,7 @@ func (c *Client) RequestRepeatedly(ctx context.Context, cache *FileCache, cr *Si
 
 // RequestRepeatedlyWithCSR is like RequestWithCSR, but runs repeatedly with the supplied interval.
 // This is a blocking method, call it as a goroutine.
-func (c *Client) RequestRepeatedlyWithCSR(ctx context.Context, cache *FileCache, csr *x509.CertificateRequest, interval time.Duration) {
+func (c *Client) RequestRepeatedlyWithCSR(ctx context.Context, cache Cache, csr *x509.CertificateRequest, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -399,11 +377,6 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		return nil, fmt.Errorf("updater or cache are nil")
 	}
 
-	err := os.MkdirAll(c.updater.cache.CacheDir, 0755)
-	if err != nil {
-		return nil, fmt.Errorf("error creating cache directory: %s", err.Error())
-	}
-
 	if c.updater.csrFunc != nil && c.updater.privKeyFunc != nil {
 		if !c.updater.cache.HasPrivateKey() {
 			if c.updater.privKeyFunc != nil {
@@ -422,7 +395,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 		}
 	}
 
-	err = c.updater.cache.Valid(c, c.updater.minValidity)
+	err := c.updater.cache.Valid(c, c.updater.minValidity)
 	if err == nil {
 		return c.updater.cache.TLSCertificate()
 	}
@@ -464,7 +437,7 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 // DownloadRootCertificate downloads the root certificate from the CertMaker instance
 // and stores it in the location specified by cache.RootCertificatePath().
 // If there is already a file at that location, it will be overwritten.
-func (c *Client) DownloadRootCertificate(cache *FileCache) error {
+func (c *Client) DownloadRootCertificate(cache Cache) error {
 	req, err := http.NewRequest(http.MethodGet, c.baseUrl+downloadRootCertificatePath, nil)
 	if err != nil {
 		return err

@@ -9,4 +9,7 @@ var (
 	ErrMissingSetup      = errors.New("certmaker-sdk: missing setup")
 	ErrNoChallengeIssued = errors.New("certmaker-sdk: server did not offer any challenge to solve")
 	ErrNoDomainsProvided = errors.New("certmaker-sdk: no domains specified in SimpleRequest, cannot solve challenge")
+	ErrNoCertificate     = errors.New("certmaker-sdk: no certificate found in cache")
+	ErrNoPrivateKey      = errors.New("certmaker-sdk: no private key found in cache")
+	ErrNoRootCertificate = errors.New("certmaker-sdk: no root certificate found in cache")
 )

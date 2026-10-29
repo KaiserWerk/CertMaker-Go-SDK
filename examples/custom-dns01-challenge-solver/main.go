@@ -33,10 +33,10 @@ func main() {
 
 	solver := &MyDNS01ChallengeSolver{}
 
-	cache, _ := certmaker.NewFileCache()
+	cache := certmaker.NewMemoryCache()
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
 		ClientTimeout:   10 * time.Minute,
-		ChallengeSolver: solver,
+		ChallengeSolver: []certmaker.ChallengeSolver{solver},
 	})
 
 	req := &certmaker.SimpleRequest{

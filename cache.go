@@ -31,5 +31,4 @@ type Cache interface {
 	Clear(removeRootCert bool) error
 }
 
-// Ensure FileCache implements the Cache interface.
-var _ Cache = (*FileCache)(nil)
+

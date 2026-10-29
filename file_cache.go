@@ -24,6 +24,9 @@ type FileCache struct {
 	RootCertificateFilename string
 }
 
+// Ensure FileCache implements the Cache interface.
+var _ Cache = (*FileCache)(nil)
+
 // NewFileCache returns a *FileCache with default values:
 //   - CacheDir = ".certs"
 //   - CertificateFilename = "cert.pem"
@@ -48,6 +51,7 @@ func NewFileCache() (*FileCache, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	cache.CertificateFilename = "cert.pem"
 	cache.PrivateKeyFilename = "key.pem"
 	cache.RootCertificateFilename = "root-cert.pem"
@@ -96,11 +100,8 @@ func (c *FileCache) TLSCertificate() (*tls.Certificate, error) {
 	}
 
 	tlsCert, err := tls.LoadX509KeyPair(c.CertificatePath(), c.PrivateKeyPath())
-	if err != nil {
-		return nil, err
-	}
 
-	return &tlsCert, nil
+	return &tlsCert, err
 }
 
 // RootCertificate loads and returns the root certificate from the Cache's root certificate file.

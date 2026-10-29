@@ -33,7 +33,7 @@ type SimpleRequestSubject struct {
 
 // updater contains data relevant to automatic certificate updating
 type updater struct {
-	cache       *FileCache
+	cache       Cache
 	minValidity time.Duration
 	srFunc      func() (*SimpleRequest, error)
 	csrFunc     func() (*x509.CertificateRequest, error)
@@ -51,5 +51,5 @@ type ClientSettings struct {
 	ClientTimeout   time.Duration
 	StrictMode      bool
 	ChallengePort   uint16
-	ChallengeSolver ChallengeSolver
+	ChallengeSolver []ChallengeSolver
 }
