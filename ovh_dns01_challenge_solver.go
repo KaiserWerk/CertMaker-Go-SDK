@@ -13,22 +13,32 @@ import (
 )
 
 const (
-	ovhBaseURL = "https://eu.api.ovh.com/v1"
+	OVHEndpointEUBaseURL = "https://eu.api.ovh.com/v1"
+)
+
+type OVHEndpoint string
+
+const (
+	OVHEndpointEU OVHEndpoint = "ovh-eu"
 )
 
 type OVHDNS01ChallengeSolver struct {
 	recordsToDelete map[string]int // map of domain to recordID
+	ovhBaseURL      string
 	appKey          string
 	appSecret       string
 	consumerKey     string
+	endpoint        OVHEndpoint
 }
 
-func NewOVHDNS01ChallengeSolver(appKey, appSecret, consumerKey string) *OVHDNS01ChallengeSolver {
+func NewOVHDNS01ChallengeSolver(endpoint OVHEndpoint, baseURL, appKey, appSecret, consumerKey string) *OVHDNS01ChallengeSolver {
 	return &OVHDNS01ChallengeSolver{
 		recordsToDelete: make(map[string]int),
+		ovhBaseURL:      baseURL,
 		appKey:          appKey,
 		appSecret:       appSecret,
 		consumerKey:     consumerKey,
+		endpoint:        endpoint,
 	}
 }
 
@@ -45,7 +55,7 @@ func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domai
 
 	// use OVH EU API to create a TXT record for the domain with the token
 	client, err := ovh.NewClient(
-		"ovh-eu",
+		string(c.endpoint),
 		c.appKey,
 		c.appSecret,
 		c.consumerKey,
@@ -67,7 +77,7 @@ func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domai
 
 	for _, domain := range domains {
 		var response DNSRecordResponse
-		err = client.PostWithContext(ctx, ovhBaseURL+"/domain/zone/"+domain+"/record", bytes.NewBuffer(b), &response)
+		err = client.PostWithContext(ctx, c.ovhBaseURL+"/domain/zone/"+domain+"/record", bytes.NewBuffer(b), &response)
 		if err != nil {
 			return err
 		}
@@ -76,7 +86,7 @@ func (c *OVHDNS01ChallengeSolver) Setup(ctx context.Context, token string, domai
 		c.recordsToDelete[domain] = response.ID
 
 		// refresh the zone to apply the changes
-		err = client.PostWithContext(ctx, ovhBaseURL+"/domain/zone/"+domain+"/refresh", nil, nil)
+		err = client.PostWithContext(ctx, c.ovhBaseURL+"/domain/zone/"+domain+"/refresh", nil, nil)
 		if err != nil {
 			return err
 		}
@@ -113,7 +123,7 @@ func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challe
 
 	// clean up the DNS record
 	client, err := ovh.NewClient(
-		"ovh-eu",
+		string(c.endpoint),
 		c.appKey,
 		c.appSecret,
 		c.consumerKey,
@@ -123,13 +133,13 @@ func (c *OVHDNS01ChallengeSolver) Solve(ctx context.Context, instanceURL, challe
 	}
 
 	for domain, recordID := range c.recordsToDelete {
-		err = client.DeleteWithContext(ctx, ovhBaseURL+"/domain/zone/"+domain+"/record/"+fmt.Sprint(recordID), nil)
+		err = client.DeleteWithContext(ctx, c.ovhBaseURL+"/domain/zone/"+domain+"/record/"+fmt.Sprint(recordID), nil)
 		if err != nil {
 			return nil, err
 		}
 
 		// refresh the zone to apply the changes
-		err = client.PostWithContext(ctx, ovhBaseURL+"/domain/zone/"+domain+"/refresh", nil, nil)
+		err = client.PostWithContext(ctx, c.ovhBaseURL+"/domain/zone/"+domain+"/refresh", nil, nil)
 		if err != nil {
 			return nil, err
 		}

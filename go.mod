@@ -1,6 +1,6 @@
 module github.com/KaiserWerk/CertMaker-Go-SDK
 
-go 1.27
+go 1.27.3
 
 require (
 	github.com/ovh/go-ovh v1.9.0

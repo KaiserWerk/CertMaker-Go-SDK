@@ -310,17 +310,52 @@ func (c *Client) RequestWithCSR(cache Cache, csr *x509.CertificateRequest) error
 	}
 
 	// TODO: REWORK!
-	// certLoc, _, err := c.requestCertificateForCSR(bytes.NewBuffer(csr.Raw)) // TODO: adapt for CSR
-	// if err != nil {
-	// 	return err
-	// }
+	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificateWithCSRPath, body)
+	if err != nil {
+		return fmt.Errorf("requestCertificateForCSR: could not create new HTTP request: " + err.Error())
+	}
 
-	// err = c.downloadCertificateFromLocation(cache, certLoc)
-	// if err != nil {
-	// 	return fmt.Errorf("RequestWithCSR: error downloading certificate from location '%s': %s", certLoc, err.Error())
-	// }
+	req.Header.Set(authenticationHeader, c.token)
 
-	// private key is not downloaded as it must already exist beforehand
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("requestCertificateForCSR: could not execute HTTP request: " + err.Error())
+	}
+	defer resp.Body.Close()
+
+	var certLoc string
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		// w/o challenge
+		certLoc = resp.Header.Get(certificateLocationHeader)
+		if certLoc == "" {
+			return fmt.Errorf("missing %s header", certificateLocationHeader)
+		}
+	case http.StatusAccepted:
+		// with challenge
+		loc := resp.Header.Get(challengeLocationHeader)
+		if loc == "" {
+			return fmt.Errorf("missing %s header", challengeLocationHeader)
+		}
+
+		token, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		certLoc, _, err = c.resolveHTTPChallenge(loc, token, c.challengePort)
+		if err != nil {
+			return err
+		}
+	default:
+		// if it's neither of both, return error
+		return fmt.Errorf("requestCertificateForCSR: expected status code 201 or 202, got %d", resp.StatusCode)
+	}
+
+	err = c.downloadCertificateFromLocation(cache, certLoc)
+	if err != nil {
+		return fmt.Errorf("RequestWithCSR: error downloading certificate from location '%s': %s", certLoc, err.Error())
+	}
 
 	return nil
 }
@@ -600,90 +635,44 @@ func (c *Client) setHeader(req *http.Request) {
 // 	return nil
 // }
 
-// func (c *Client) requestCertificateForCSR(body io.Reader) (string, string, error) {
-// 	req, err := http.NewRequest(http.MethodPost, c.baseUrl+requestCertificateWithCSRPath, body)
-// 	if err != nil {
-// 		return "", "", fmt.Errorf("requestCertificateForCSR: could not create new HTTP request: " + err.Error())
-// 	}
+func (c *Client) resolveHTTPChallenge(resolveURL string, token []byte, challengePort uint16) (string, string, error) {
+	if challengePort == 0 {
+		challengePort = 80
+	}
 
-// 	req.Header.Set(authenticationHeader, c.token)
+	mux := http.NewServeMux()
+	mux.HandleFunc(wellKnownPath, func(w http.ResponseWriter, r *http.Request) { w.Write(token) })
+	server := http.Server{
+		Handler:           mux,
+		Addr:              fmt.Sprintf(":%d", challengePort),
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		ReadHeaderTimeout: 20 * time.Second,
+	}
+	server.SetKeepAlivesEnabled(false)
 
-// 	resp, err := c.httpClient.Do(req)
-// 	if err != nil {
-// 		return "", "", fmt.Errorf("requestCertificateForCSR: could not execute HTTP request: " + err.Error())
-// 	}
-// 	defer resp.Body.Close()
+	go server.ListenAndServe()
+	defer server.Shutdown(context.Background()) // TODO: supply proper context with deadline
 
-// 	var certLoc string
-// 	switch resp.StatusCode {
-// 	case http.StatusCreated:
-// 		// w/o challenge
-// 		certLoc = resp.Header.Get(certificateLocationHeader)
-// 		if certLoc == "" {
-// 			return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
-// 		}
-// 	case http.StatusAccepted:
-// 		// with challenge
-// 		loc := resp.Header.Get(challengeLocationHeader)
-// 		if loc == "" {
-// 			return "", "", fmt.Errorf("missing %s header", challengeLocationHeader)
-// 		}
+	req, err := http.NewRequest(http.MethodGet, resolveURL, nil)
+	if err != nil {
+		return "", "", err
+	}
 
-// 		token, err := io.ReadAll(resp.Body)
-// 		if err != nil {
-// 			return "", "", err
-// 		}
+	req.Header.Set(authenticationHeader, c.token)
 
-// 		certLoc, _, err = c.resolveHTTPChallenge(loc, token, c.challengePort)
-// 		if err != nil {
-// 			return "", "", err
-// 		}
-// 	default:
-// 		// if it's neither of both, return error
-// 		return "", "", fmt.Errorf("requestCertificateForCSR: expected status code 201 or 202, got %d", resp.StatusCode)
-// 	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
 
-// 	return certLoc, "", nil
-// }
+	certLoc := resp.Header.Get(certificateLocationHeader)
+	if certLoc == "" {
+		return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
+	}
 
-// func (c *Client) resolveHTTPChallenge(resolveURL string, token []byte, challengePort uint16) (string, string, error) {
-// 	if challengePort == 0 {
-// 		challengePort = 80
-// 	}
+	// pkLoc might be empty for requests with CSR
+	pkLoc := resp.Header.Get(privateKeyLocationHeader)
 
-// 	mux := http.NewServeMux()
-// 	mux.HandleFunc(wellKnownPath, func(w http.ResponseWriter, r *http.Request) { w.Write(token) })
-// 	server := http.Server{
-// 		Handler:           mux,
-// 		Addr:              fmt.Sprintf(":%d", challengePort),
-// 		ReadTimeout:       60 * time.Second,
-// 		WriteTimeout:      60 * time.Second,
-// 		ReadHeaderTimeout: 20 * time.Second,
-// 	}
-// 	server.SetKeepAlivesEnabled(false)
-
-// 	go server.ListenAndServe()
-// 	defer server.Shutdown(context.Background()) // TODO: supply proper context with deadline
-
-// 	req, err := http.NewRequest(http.MethodGet, resolveURL, nil)
-// 	if err != nil {
-// 		return "", "", err
-// 	}
-
-// 	req.Header.Set(authenticationHeader, c.token)
-
-// 	resp, err := c.httpClient.Do(req)
-// 	if err != nil {
-// 		return "", "", err
-// 	}
-
-// 	certLoc := resp.Header.Get(certificateLocationHeader)
-// 	if certLoc == "" {
-// 		return "", "", fmt.Errorf("missing %s header", certificateLocationHeader)
-// 	}
-
-// 	// pkLoc might be empty for requests with CSR
-// 	pkLoc := resp.Header.Get(privateKeyLocationHeader)
-
-// 	return certLoc, pkLoc, nil
-// }
+	return certLoc, pkLoc, nil
+}
