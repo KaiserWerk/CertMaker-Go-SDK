@@ -12,17 +12,16 @@ func main() {
 	certMakerInstance := "http://localhost:8880"
 	token := "<token>"
 
-	cache, _ := certmaker.NewFileCache()
+	cache, _ := certmaker.NewFileCache("/opt/certs")
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
-		ClientTimeout: 10 * time.Minute,
+		ClientTimeout: 5 * time.Minute,
 	})
 
 	sr := &certmaker.SimpleRequest{
 		Domains:        []string{"example.com", "www.example.com"},
 		EmailAddresses: []string{"user@example.com"},
 		IPs:            []string{"127.0.0.1"},
-
-		Days: 100,
+		Validity:       47 * 24 * time.Hour,
 		Subject: certmaker.SimpleRequestSubject{
 			Organization:  "Example Inc.",
 			Country:       "DE",

@@ -25,8 +25,7 @@ func main() {
 		Domains:        []string{"example.com", "www.example.com"},
 		EmailAddresses: []string{"user@example.com"},
 		IPs:            []string{"127.0.0.1"},
-
-		Days: 88,
+		Validity:       88 * 24 * time.Hour,
 		Subject: certmaker.SimpleRequestSubject{
 			CommonName:    "example.com",
 			Organization:  "Example Inc.",

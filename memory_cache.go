@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -30,36 +29,41 @@ func NewMemoryCache() *MemoryCache {
 // Ensure MemoryCache implements the Cache interface.
 var _ Cache = (*MemoryCache)(nil)
 
-// SetDir is a no-op for MemoryCache as it does not use a directory.
-func (m *MemoryCache) SetDir(dir string) error {
-	return nil
-}
-
 func (m *MemoryCache) HasCertificate() bool {
 	return len(m.certificate) > 0
 }
-
+func (m *MemoryCache) HasPrivateKey() bool {
+	return len(m.privateKey) > 0
+}
 func (m *MemoryCache) HasRootCertificate() bool {
 	return len(m.rootCertificate) > 0
 }
 
-func (m *MemoryCache) HasPrivateKey() bool {
-	return len(m.privateKey) > 0
+
+func (c *MemoryCache) SetCertificate(data []byte) error {
+	c.certificate = data
+	return nil
+}
+func (c *MemoryCache) SetPrivateKey(data []byte) error {
+	c.privateKey = data
+	return nil
+}
+func (c *MemoryCache) SetRootCertificate(data []byte) error {
+	c.rootCertificate = data
+	return nil
 }
 
 // CertificatePath returns an empty string as MemoryCache does not have a file path for the certificate.
-func (m *MemoryCache) CertificatePath() string {
-	return ""
+func (m *MemoryCache) CertificatePath() (string, error) {
+	return "", nil
 }
-
 // PrivateKeyPath returns an empty string as MemoryCache does not have a file path for the private key.
-func (m *MemoryCache) PrivateKeyPath() string {
-	return ""
+func (m *MemoryCache) PrivateKeyPath() (string, error) {
+	return "", nil
 }
-
 // RootCertificatePath returns an empty string as MemoryCache does not have a file path for the root certificate.
-func (m *MemoryCache) RootCertificatePath() string {
-	return ""
+func (m *MemoryCache) RootCertificatePath() (string, error) {
+	return "", nil
 }
 
 func (m *MemoryCache) CertificateBytes() ([]byte, error) {
@@ -112,23 +116,7 @@ func (m *MemoryCache) RootCertificate() (*x509.Certificate, error) {
 	return cert, nil
 }
 
-// CopyPrivateKeyFromFile retrieves a raw copy of a private key from the supplied file.
-func (m *MemoryCache) CopyPrivateKeyFromFile(src string) error {
-	cont, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("CopyPrivateKeyFromFile: could not read source private key file: %w", err)
-	}
-	m.privateKey = cont
-	return nil
-}
 
-// Valid returns nil if the certificate in *MemoryCache is found to be valid.
-// The following checks are performed:
-//   - is the certificate expired
-//
-// If strictmode is enabled, *Client additionally sends an OCSP request to check revocation status.
-//
-// If any of the checks fail, an error is returned.
 func (m *MemoryCache) Valid(client *Client, minValidity time.Duration) error {
 	if !m.HasCertificate() {
 		return ErrNoCertificate

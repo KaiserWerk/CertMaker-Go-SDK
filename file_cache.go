@@ -33,15 +33,20 @@ var _ Cache = (*FileCache)(nil)
 //   - PrivateKeyFilename = "key.pem"
 //   - RootCertificateFilename = "root-cert.pem"
 //
-// The cache directory is created relative to the current working directory.
+// If dir is empty, the current working directory is used.
+//
+// The cache directory is created relative to the supplied directory.
 // The private key file contains the PEM-encoded private key.
 // The certificate file contains the PEM-encoded certificate (leaf).
 // The certificate file may contain a full chain, starting with the leaf certificate.
 //
 // Values may be modified after creation, but they should not be modified after first use.
-func NewFileCache() (*FileCache, error) {
+func NewFileCache(dir string) (*FileCache, error) {
+	if dir == "" {
+		dir = "."
+	}
 	cache := FileCache{}
-	baseDir, err := filepath.Abs(".")
+	baseDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -59,58 +64,117 @@ func NewFileCache() (*FileCache, error) {
 	return &cache, nil
 }
 
-// SetDir sets the directory where the cache files are stored.
-// The directory is created if it does not exist.
-func (c *FileCache) SetDir(dir string) error {
-	baseDir, err := filepath.Abs(dir)
+func (c *FileCache) HasCertificate() bool {
+	p, _ := c.CertificatePath()
+	return fileExists(p)
+}
+func (c *FileCache) HasPrivateKey() bool {
+	p, _ := c.PrivateKeyPath()
+	return fileExists(p)
+}
+func (c *FileCache) HasRootCertificate() bool {
+	p, _ := c.RootCertificatePath()
+	return fileExists(p)
+}
+
+func (c *FileCache) SetCertificate(data []byte) error {
+	p, _ := c.CertificatePath()
+	err := os.WriteFile(p, data, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("SetCertificate: could not write certificate file: %w", err)
 	}
-	err = os.MkdirAll(baseDir, 0700)
+	return nil
+}
+func (c *FileCache) SetPrivateKey(data []byte) error {
+	p, _ := c.PrivateKeyPath()
+	err := os.WriteFile(p, data, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("SetPrivateKey: could not write private key file: %w", err)
 	}
-	c.CacheDir = baseDir
+	return nil
+}
+func (c *FileCache) SetRootCertificate(data []byte) error {
+	p, _ := c.RootCertificatePath()
+	err := os.WriteFile(p, data, 0o755)
+	if err != nil {
+		return fmt.Errorf("SetRootCertificate: could not write root certificate file: %w", err)
+	}
 	return nil
 }
 
 // CertificatePath returns the absolute path to the Cache's certificate file.
-func (c *FileCache) CertificatePath() string {
-	return filepath.Join(c.CacheDir, c.CertificateFilename)
+func (c *FileCache) CertificatePath() (string, error) {
+	return filepath.Join(c.CacheDir, c.CertificateFilename), nil
 }
 
 // PrivateKeyPath returns the absolute path to the Cache's private key file.
-func (c *FileCache) PrivateKeyPath() string {
-	return filepath.Join(c.CacheDir, c.PrivateKeyFilename)
+func (c *FileCache) PrivateKeyPath() (string, error) {
+	return filepath.Join(c.CacheDir, c.PrivateKeyFilename), nil
 }
 
 // RootCertificatePath returns the absolute path to the Cache's root certificate file.
-func (c *FileCache) RootCertificatePath() string {
-	return filepath.Join(c.CacheDir, c.RootCertificateFilename)
+func (c *FileCache) RootCertificatePath() (string, error) {
+	return filepath.Join(c.CacheDir, c.RootCertificateFilename), nil
 }
 
-// TLSCertificate loads and returns a tls.Certificate from the Cache's certificate and private key files.
+func (c *FileCache) CertificateBytes() ([]byte, error) {
+	if !c.HasCertificate() {
+		return nil, fmt.Errorf("certificate file does not exist")
+	}
+	p, _ := c.CertificatePath()
+	cont, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("could not read certificate file: %w", err)
+	}
+	return cont, nil
+}
+
+func (c *FileCache) PrivateKeyBytes() ([]byte, error) {
+	if !c.HasPrivateKey() {
+		return nil, fmt.Errorf("private key file does not exist")
+	}
+	p, _ := c.PrivateKeyPath()
+	cont, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("could not read private key file: %w", err)
+	}
+	return cont, nil
+}
+func (c *FileCache) RootCertificateBytes() ([]byte, error) {
+	if !c.HasRootCertificate() {
+		return nil, fmt.Errorf("root certificate file does not exist")
+	}
+	p, _ := c.RootCertificatePath()
+	cont, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("could not read root certificate file: %w", err)
+	}
+	return cont, nil
+}
+
 func (c *FileCache) TLSCertificate() (*tls.Certificate, error) {
-	if !fileExists(c.PrivateKeyPath()) {
+	pkPath, _ := c.PrivateKeyPath()
+	if !fileExists(pkPath) {
 		return nil, fmt.Errorf("private key file missing")
 	}
 
-	if !fileExists(c.CertificatePath()) {
+	certPath, _ := c.CertificatePath()
+	if !fileExists(certPath) {
 		return nil, fmt.Errorf("certificate file missing")
 	}
 
-	tlsCert, err := tls.LoadX509KeyPair(c.CertificatePath(), c.PrivateKeyPath())
+	tlsCert, err := tls.LoadX509KeyPair(certPath, pkPath)
 
 	return &tlsCert, err
 }
 
-// RootCertificate loads and returns the root certificate from the Cache's root certificate file.
 func (c *FileCache) RootCertificate() (*x509.Certificate, error) {
 	if !c.HasRootCertificate() {
 		return nil, fmt.Errorf("root certificate file does not exist")
 	}
 
-	cont, err := os.ReadFile(c.RootCertificatePath())
+	p, _ := c.RootCertificatePath()
+	cont, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +200,12 @@ func (c *FileCache) RootCertificate() (*x509.Certificate, error) {
 //
 // If any of the checks fail, an error is returned.
 func (c *FileCache) Valid(client *Client, minValidity time.Duration) error {
-	if !fileExists(c.CertificatePath()) {
+	certPath, _ := c.CertificatePath()
+	if !fileExists(certPath) {
 		return fmt.Errorf("certificate file missing")
 	}
 
-	cont, err := os.ReadFile(c.CertificatePath())
+	cont, err := os.ReadFile(certPath)
 	if err != nil {
 		return fmt.Errorf("could not read certificate file: %w", err)
 	}
@@ -203,44 +268,19 @@ func (c *FileCache) Valid(client *Client, minValidity time.Duration) error {
 	return nil
 }
 
-// CopyPrivateKeyFromFile makes a copy of the private key file located at 'src' into the cache's private key file.
-func (c *FileCache) CopyPrivateKeyFromFile(src string) error {
-	input, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("CopyPrivateKeyFromFile: could not read source private key file: %w", err)
-	}
-	err = os.WriteFile(c.PrivateKeyPath(), input, 0600)
-	if err != nil {
-		return fmt.Errorf("CopyPrivateKeyFromFile: could not write private key file: %w", err)
-	}
-	return nil
-}
-
-func (c *FileCache) HasCertificate() bool {
-	return fileExists(c.CertificatePath())
-}
-
-func (c *FileCache) HasRootCertificate() bool {
-	return fileExists(c.RootCertificatePath())
-}
-
-func (c *FileCache) HasPrivateKey() bool {
-	return fileExists(c.PrivateKeyPath())
-}
-
-// CClear removes the cache's certificate, private key, and, if true is supplied, root certificate as well.
-// This is a destructive operation and cannot be undone.
 func (c *FileCache) Clear(removeRootCert bool) error {
 	// remove the certificate file
 	if c.HasCertificate() {
-		err := os.Remove(c.CertificatePath())
+		p, _ := c.CertificatePath()
+		err := os.Remove(p)
 		if err != nil {
 			return fmt.Errorf("could not remove certificate file: %w", err)
 		}
 	}
 	// remove the private key file
 	if c.HasPrivateKey() {
-		err := os.Remove(c.PrivateKeyPath())
+		p, _ := c.PrivateKeyPath()
+		err := os.Remove(p)
 		if err != nil {
 			return fmt.Errorf("could not remove private key file: %w", err)
 		}
@@ -248,43 +288,12 @@ func (c *FileCache) Clear(removeRootCert bool) error {
 
 	// remove the root certificate file if it exists
 	if c.HasRootCertificate() && removeRootCert {
-		err := os.Remove(c.RootCertificatePath())
+		p, _ := c.RootCertificatePath()
+		err := os.Remove(p)
 		if err != nil {
 			return fmt.Errorf("could not remove root certificate file: %w", err)
 		}
 	}
 
 	return nil
-}
-
-func (c *FileCache) CertificateBytes() ([]byte, error) {
-	if !c.HasCertificate() {
-		return nil, fmt.Errorf("certificate file does not exist")
-	}
-	cont, err := os.ReadFile(c.CertificatePath())
-	if err != nil {
-		return nil, fmt.Errorf("could not read certificate file: %w", err)
-	}
-	return cont, nil
-}
-
-func (c *FileCache) PrivateKeyBytes() ([]byte, error) {
-	if !c.HasPrivateKey() {
-		return nil, fmt.Errorf("private key file does not exist")
-	}
-	cont, err := os.ReadFile(c.PrivateKeyPath())
-	if err != nil {
-		return nil, fmt.Errorf("could not read private key file: %w", err)
-	}
-	return cont, nil
-}
-func (c *FileCache) RootCertificateBytes() ([]byte, error) {
-	if !c.HasRootCertificate() {
-		return nil, fmt.Errorf("root certificate file does not exist")
-	}
-	cont, err := os.ReadFile(c.RootCertificatePath())
-	if err != nil {
-		return nil, fmt.Errorf("could not read root certificate file: %w", err)
-	}
-	return cont, nil
 }

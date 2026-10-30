@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -35,7 +36,7 @@ const (
 
 	pemContentType = "application/x-pem-file"
 
-	defaultMinimumValidity = 72 * time.Hour
+	defaultMinimumValidity = 1 * time.Minute
 	clientDefaultTimeout   = 60 * time.Second
 )
 
@@ -48,6 +49,7 @@ type Client struct {
 	challengePort   uint16
 	updater         *updater // required for the GetCertificateFunc
 	challengeSolver []ChallengeSolver
+	mut             *sync.Mutex
 }
 
 // NewClient returns a *Client with a new *http.Client and baseUrl and token fields set to their parameter values.
@@ -58,6 +60,7 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 	c := Client{
 		baseUrl: baseUrl,
 		token:   token,
+		mut:     &sync.Mutex{},
 	}
 	if settings != nil {
 		timeout := clientDefaultTimeout
@@ -84,7 +87,7 @@ func NewClient(baseUrl, token string, settings *ClientSettings) *Client {
 }
 
 // SetupWithSimpleRequest is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithSimpleRequest(cache Cache, srFunc func() (*SimpleRequest, error), minValidity time.Duration) {
+func (c *Client) SetupWithSimpleRequest(cache Cache, minValidity time.Duration, srFunc func() (*SimpleRequest, error)) {
 	c.updater = &updater{
 		cache:       cache,
 		srFunc:      srFunc,
@@ -93,7 +96,7 @@ func (c *Client) SetupWithSimpleRequest(cache Cache, srFunc func() (*SimpleReque
 }
 
 // SetupWithCSR is a preparatory call in order to use GetCertificateFunc with an http.Server struct
-func (c *Client) SetupWithCSR(cache Cache, csrFunc func() (*x509.CertificateRequest, error), privKeyFunc func() (string, error), minValidity time.Duration) {
+func (c *Client) SetupWithCSR(cache Cache, minValidity time.Duration, csrFunc func() (*x509.CertificateRequest, error), privKeyFunc func() (any, error)) {
 	c.updater = &updater{
 		cache:       cache,
 		csrFunc:     csrFunc,
@@ -104,15 +107,15 @@ func (c *Client) SetupWithCSR(cache Cache, csrFunc func() (*x509.CertificateRequ
 
 // RequestForDomains is a convenience method to fetch a certificate and a private
 // key for just the selected domain(s) disregarding other options.
-func (c *Client) RequestForDomains(cache Cache, domains []string, days int) error {
+func (c *Client) RequestForDomains(cache Cache, domains []string, validity time.Duration) error {
 	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
 
 	sr := SimpleRequest{
-		Domains: domains,
-		Days:    days,
+		Domains:  domains,
+		Validity: validity,
 	}
 
 	return c.Request(cache, &sr)
@@ -120,15 +123,15 @@ func (c *Client) RequestForDomains(cache Cache, domains []string, days int) erro
 
 // RequestForIPs is a convenience method to fetch a certificate and a private
 // key for just the selected IP address(es) disregarding other options.
-func (c *Client) RequestForIPs(cache Cache, ips []string, days int) error {
+func (c *Client) RequestForIPs(cache Cache, ips []string, validity time.Duration) error {
 	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
 	}
 
 	sr := SimpleRequest{
-		IPs:  ips,
-		Days: days,
+		IPs:      ips,
+		Validity: validity,
 	}
 
 	return c.Request(cache, &sr)
@@ -136,7 +139,7 @@ func (c *Client) RequestForIPs(cache Cache, ips []string, days int) error {
 
 // RequestForEmails is a convenience method to fetch a certificate and a private
 // key for just the selected email address(es) disregarding other options.
-func (c *Client) RequestForEmails(cache Cache, emails []string, days int) error {
+func (c *Client) RequestForEmails(cache Cache, emails []string, validity time.Duration) error {
 	err := cache.Valid(c, defaultMinimumValidity)
 	if err == nil {
 		return ErrStillValid
@@ -144,7 +147,7 @@ func (c *Client) RequestForEmails(cache Cache, emails []string, days int) error 
 
 	sr := SimpleRequest{
 		EmailAddresses: emails,
-		Days:           days,
+		Validity:       validity,
 	}
 
 	return c.Request(cache, &sr)
@@ -208,29 +211,30 @@ func (c *Client) Request(cache Cache, simpleRequest *SimpleRequest) error {
 				if solver.CanSolve(challenge.ChallengeType) {
 					err = solver.Setup(challengeCtx, challenge.ChallengeToken, simpleRequest.Domains)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not set up challenge: " + err.Error())
+						return errors.New("certmaker-sdk: could not set up challenge: " + err.Error())
 					}
 
 					certificateResponse, err := solver.Solve(challengeCtx, c.baseUrl, challenge.ChallengeID, c.setHeader)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not solve challenge: " + err.Error())
+						return errors.New("certmaker-sdk: could not solve challenge: " + err.Error())
 					}
 
 					// certificate to file
 					certContents, err := base64.StdEncoding.DecodeString(certificateResponse.CertificatePEM)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
+						return errors.New("certmaker-sdk: could not decode certificate from base64: " + err.Error())
 					}
 
 					var b bytes.Buffer
 					err = pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
+						return errors.New("certmaker-sdk: could not encode certificate to PEM format: " + err.Error())
 					}
 
-					err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
+					certPath, _ := cache.CertificatePath()
+					err = os.WriteFile(certPath, b.Bytes(), 0644)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
+						return errors.New("certmaker-sdk: could not write certificate file: " + err.Error())
 					}
 
 					b.Reset()
@@ -238,17 +242,18 @@ func (c *Client) Request(cache Cache, simpleRequest *SimpleRequest) error {
 					// private key to file
 					privateKeyContents, err := base64.StdEncoding.DecodeString(certificateResponse.PrivateKeyPEM)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
+						return errors.New("certmaker-sdk: could not decode private key from base64: " + err.Error())
 					}
 
 					err = pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not encode private key to PEM format: " + err.Error())
+						return errors.New("certmaker-sdk: could not encode private key to PEM format: " + err.Error())
 					}
 
-					err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
+					privKeyPath, _ := cache.PrivateKeyPath()
+					err = os.WriteFile(privKeyPath, b.Bytes(), 0600)
 					if err != nil {
-						return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
+						return errors.New("certmaker-sdk: could not write private key file: " + err.Error())
 					}
 
 					// immediately cancel the context to stop any running challenge server
@@ -263,14 +268,14 @@ func (c *Client) Request(cache Cache, simpleRequest *SimpleRequest) error {
 		// w/o challenge, just write the certificate and private key to file
 		certContents, err := base64.StdEncoding.DecodeString(response.CertificatePEM)
 		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not decode certificate from base64: " + err.Error())
+			return errors.New("certmaker-sdk: could not decode certificate from base64: " + err.Error())
 		}
 
 		var b bytes.Buffer
 		pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: certContents})
-		err = os.WriteFile(cache.CertificatePath(), b.Bytes(), 0644)
+		err = cache.SetCertificate(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not write certificate file: " + err.Error())
+			return errors.New("certmaker-sdk: could not write certificate file: " + err.Error())
 		}
 
 		b.Reset()
@@ -278,13 +283,13 @@ func (c *Client) Request(cache Cache, simpleRequest *SimpleRequest) error {
 		// private key to file
 		privateKeyContents, err := base64.StdEncoding.DecodeString(response.PrivateKeyPEM)
 		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not decode private key from base64: " + err.Error())
+			return errors.New("certmaker-sdk: could not decode private key from base64: " + err.Error())
 		}
 
 		pem.Encode(&b, &pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyContents})
-		err = os.WriteFile(cache.PrivateKeyPath(), b.Bytes(), 0600)
+		err = cache.SetPrivateKey(b.Bytes())
 		if err != nil {
-			return fmt.Errorf("certmaker-sdk: could not write private key file: " + err.Error())
+			return errors.New("certmaker-sdk: could not write private key file: " + err.Error())
 		}
 	} else {
 		// if it's neither of both, return error
@@ -372,49 +377,53 @@ func (c *Client) GetCertificateFunc(chi *tls.ClientHelloInfo) (*tls.Certificate,
 	if c == nil {
 		return nil, fmt.Errorf("client is nil")
 	}
+	c.mut.Lock()
+	defer c.mut.Unlock()
 
 	if c.updater == nil || c.updater.cache == nil {
 		return nil, fmt.Errorf("updater or cache are nil")
 	}
 
-	if c.updater.csrFunc != nil && c.updater.privKeyFunc != nil {
-		if !c.updater.cache.HasPrivateKey() {
-			if c.updater.privKeyFunc != nil {
-				privKeyPath, err := c.updater.privKeyFunc()
-				if err != nil {
-					return nil, fmt.Errorf("error calling private key function: %w", err)
-				}
-
-				err = c.updater.cache.CopyPrivateKeyFromFile(privKeyPath)
-				if err != nil {
-					return nil, fmt.Errorf("error copying private key from file: %w", err)
-				}
-			} else {
-				return nil, fmt.Errorf("private key file is missing and no function to obtain it was supplied")
-			}
-		}
-	}
-
+	// first, check whether the cached certificate is still valid
 	err := c.updater.cache.Valid(c, c.updater.minValidity)
 	if err == nil {
 		return c.updater.cache.TLSCertificate()
 	}
 
+	// // not a simple request. must have CSR and optionally private key functions set
+	// if c.updater.csrFunc != nil && c.updater.privKeyFunc != nil {
+	// 	if !c.updater.cache.HasPrivateKey() {
+	// 		if c.updater.privKeyFunc != nil {
+	// 			privKeyPath, err := c.updater.privKeyFunc()
+	// 			if err != nil {
+	// 				return nil, fmt.Errorf("error calling private key function: %w", err)
+	// 			}
+
+	// 			err = c.updater.cache.CopyPrivateKeyFromFile(privKeyPath)
+	// 			if err != nil {
+	// 				return nil, fmt.Errorf("error copying private key from file: %w", err)
+	// 			}
+	// 		} else {
+	// 			return nil, fmt.Errorf("private key file is missing and no function to obtain it was supplied")
+	// 		}
+	// 	}
+	// }
+
 	if c.updater.srFunc != nil {
-		sr, err := c.updater.srFunc()
+		sr, err := c.updater.srFunc() // fetches the SimpleRequest
 		if err != nil {
 			return nil, fmt.Errorf("error calling SimpleRequest function: %w", err)
 		}
-		err = c.Request(c.updater.cache, sr)
+		err = c.Request(c.updater.cache, sr) // orders a new certificate based on the SimpleRequest
 		if err != nil {
 			return nil, fmt.Errorf("error requesting certificate with SimpleRequest: %w", err)
 		}
 	} else if c.updater.csrFunc != nil {
-		csr, err := c.updater.csrFunc()
+		csr, err := c.updater.csrFunc() // fetches the CSR
 		if err != nil {
 			return nil, fmt.Errorf("error calling CSR function: %w", err)
 		}
-		err = c.RequestWithCSR(c.updater.cache, csr)
+		err = c.RequestWithCSR(c.updater.cache, csr) // orders a new certificate based on the CSR
 		if err != nil {
 			return nil, fmt.Errorf("error requesting certificate with CSR: %w", err)
 		}
@@ -459,16 +468,13 @@ func (c *Client) DownloadRootCertificate(cache Cache) error {
 		return fmt.Errorf("expected Content-Type %s, git %s", pemContentType, resp.Header.Get("Content-Type"))
 	}
 
-	fh, err := os.OpenFile(cache.RootCertificatePath(), os.O_CREATE|os.O_WRONLY, 0744)
+	var rootCertBytes bytes.Buffer
+	_, err = io.Copy(&rootCertBytes, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer fh.Close()
 
-	_, err = io.Copy(fh, resp.Body)
-	if err != nil {
-		return err
-	}
+	cache.SetRootCertificate(rootCertBytes.Bytes())
 
 	return nil
 }

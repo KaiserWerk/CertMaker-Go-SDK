@@ -3,6 +3,7 @@ package certmaker
 import "errors"
 
 var (
+	ErrNotImplemented    = errors.New("certmaker-sdk: not implemented")
 	ErrUnauthorized      = errors.New("certmaker-sdk: HTTP request unauthorized - invalid API key or token")
 	ErrBadRequest        = errors.New("certmaker-sdk: HTTP request bad - malformed request or invalid data")
 	ErrStillValid        = errors.New("certmaker-sdk: the certificate is still valid")

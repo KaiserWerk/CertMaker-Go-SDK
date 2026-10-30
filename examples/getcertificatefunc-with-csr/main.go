@@ -18,7 +18,7 @@ func main() {
 	certMakerInstance := "http://localhost:8880"
 	token := "<token>"
 
-	cache, _ := certmaker.NewFileCache()
+	cache := certmaker.NewMemoryCache()
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
 		ClientTimeout: 10 * time.Minute,
 	})
@@ -27,18 +27,32 @@ func main() {
 	defer cancel()
 
 	privKeyFile := "./some/dir/key.pem"
+	privKeyBytes, err := os.ReadFile(privKeyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	block, _ := pem.Decode(privKeyBytes)
+	if block == nil || block.Type != "PRIVATE KEY" {
+		log.Fatal("failed to decode PEM block containing private key")
+	}
+	_ = cache.SetPrivateKey(block.Bytes)
+	privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = privKey
+
 	csrFile := "./some/dir/csr.pem"
-	cont, err := os.ReadFile(csrFile)
+	csrFileBytes, err := os.ReadFile(csrFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Only the first PEM block is used; rest is ignored.
-	block, rest := pem.Decode(cont)
+	block, _ = pem.Decode(csrFileBytes)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
 		log.Fatal("failed to decode PEM block containing certificate request")
 	}
-	_ = rest // rest is ignored intentionally
 
 	csr, err := x509.ParseCertificateRequest(block.Bytes)
 	if err != nil {
@@ -47,13 +61,12 @@ func main() {
 
 	client.SetupWithCSR(
 		cache,
+		3*time.Hour,
+		// set func to return the CSR, allows for differing CSRs to be used dynamically if needed
 		func() (*x509.CertificateRequest, error) {
 			return csr, nil
 		},
-		func() (string, error) {
-			return privKeyFile, nil
-		},
-		3*time.Hour,
+		nil, // not set, will be taken from cache if available
 	)
 
 	mux := http.NewServeMux()

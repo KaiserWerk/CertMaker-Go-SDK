@@ -7,8 +7,8 @@ import (
 )
 
 // SimpleRequest defines a request for a new certificate and private key. The field Subject
-// is optional and can be omitted. Days can be between 1 and 182. If the value is higher than 182, then it
-// will be set to 182 on the server side. If it is lower than 1, it will be set to 1 on the server side.
+// is optional and can be omitted. Highest possible value for Validity 182 days.
+// Lowest possible value for Validity 1 minute.
 //
 // You can either supply zero or more Domains, zero or more IPs and zero or more EmailAddresses, but any one
 // of these three slices must contain at least one entry.
@@ -17,7 +17,7 @@ type SimpleRequest struct {
 	IPs            []string             `json:"ips"`
 	EmailAddresses []string             `json:"emails"`
 	Subject        SimpleRequestSubject `json:"subject,omitempty"`
-	Days           int                  `json:"days"`
+	Validity       time.Duration        `json:"validity"`
 }
 
 // SimpleRequestSubject represents the subject of a SimpleRequest
@@ -37,7 +37,7 @@ type updater struct {
 	minValidity time.Duration
 	srFunc      func() (*SimpleRequest, error)
 	csrFunc     func() (*x509.CertificateRequest, error)
-	privKeyFunc func() (string, error)
+	privKeyFunc func() (any, error)
 }
 
 // ClientSettings represent meta data useful for altering the behaviour of a *Client.

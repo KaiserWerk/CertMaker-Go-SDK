@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
 	"time"
 
 	certmaker "github.com/KaiserWerk/CertMaker-Go-SDK"
@@ -15,20 +13,15 @@ func main() {
 	certMakerInstance := "http://localhost:8880"
 	token := "<token>"
 
-	cache, _ := certmaker.NewFileCache()
+	cache, _ := certmaker.NewFileCache(".")
 	client := certmaker.NewClient(certMakerInstance, token, &certmaker.ClientSettings{
-		ClientTimeout: 10 * time.Minute,
+		ClientTimeout: 2 * time.Minute,
 	})
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
 	sr := &certmaker.SimpleRequest{
-		Domains:        []string{"example.com", "www.example.com"},
-		EmailAddresses: []string{"user@example.com"},
-		IPs:            []string{"127.0.0.1"},
-
-		Days: 1,
+		Domains:  []string{"localhost", "myapp.local"},
+		IPs:      []string{"127.0.0.1"},
+		Validity: 3 * time.Minute,
 		Subject: certmaker.SimpleRequestSubject{
 			Organization:  "Example Inc.",
 			Country:       "DE",
@@ -39,20 +32,31 @@ func main() {
 		},
 	}
 
-	client.SetupWithSimpleRequest(cache, func() (*certmaker.SimpleRequest, error) { return sr, nil }, 23*time.Hour)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
+	client.SetupWithSimpleRequest(cache, 1*time.Minute, func() (*certmaker.SimpleRequest, error) {
+		return sr, nil
 	})
-	server := &http.Server{
-		Addr:    ":25000",
-		Handler: mux,
-		TLSConfig: &tls.Config{
-			GetCertificate: client.GetCertificateFunc,
+
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			fmt.Printf("Received ClientHello from %s\n", info.ServerName)
+			cert, err := client.GetCertificateFunc(info)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("loaded cert sn=%v\n", cert.Leaf.SerialNumber)
+
+			return cert, nil
 		},
 	}
-	go server.ListenAndServeTLS("", "")
-
-	<-ctx.Done()
+	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, world!"))
+	})
+	server := http.Server{
+		Addr:      ":8443",
+		Handler:   handlerFunc,
+		TLSConfig: tlsConfig,
+	}
+	fmt.Println("Starting server on https://localhost:8443")
+	server.ListenAndServeTLS("", "")
 }
